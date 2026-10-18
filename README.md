@@ -61,7 +61,7 @@ Tạo hoặc mở thư mục `album` nằm cạnh file thực thi và chép các
 ```text
 Chill-Music/
 ├── chill-music.exe
-├── locales/          <- Thư mục chứa các file ngôn ngữ giao diện
+├── locales/          <- Tự động sinh khi chạy (để tùy biến bản dịch nếu muốn)
 ├── album/            <- Đặt các bài nhạc .mid tại đây
 │   ├── BaiHat1.mid
 │   └── BaiHat2.mid
