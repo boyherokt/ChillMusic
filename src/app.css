@@ -7,9 +7,9 @@
     color-scheme: dark;
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     --spotify-green: #1db954;
-    --spotify-dark: rgba(12, 12, 12, 0.88);
-    --spotify-darker: rgba(7, 7, 7, 0.92);
-    --spotify-gray: rgba(16, 16, 16, 0.92);
+    --spotify-dark: rgba(12, 12, 12, 0.55);
+    --spotify-darker: rgba(8, 8, 8, 0.65);
+    --spotify-gray: rgba(14, 14, 14, 0.70);
     --glass-border: rgba(255, 255, 255, 0.08);
   }
 
@@ -52,29 +52,29 @@
 @layer components {
   .spotify-sidebar {
     background-color: var(--spotify-darker);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .spotify-main {
     background-color: var(--spotify-dark);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
   }
 
   .spotify-player {
     background-color: var(--spotify-gray);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
     border-top: 1px solid var(--glass-border);
   }
 
   /* Pure neutral dark frosted glass for dropdowns, popups and modals */
   .bg-\[\#282828\] {
-    background-color: rgba(22, 22, 22, 0.95) !important;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background-color: rgba(18, 18, 18, 0.82) !important;
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
   }
 
   .drag-handle {

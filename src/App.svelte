@@ -762,7 +762,7 @@
 
     <!-- Clickable Icon -->
     <button
-      class="w-14 h-14 rounded-2xl bg-black/90 border border-white/15 shadow-2xl overflow-hidden relative flex items-center justify-center cursor-pointer active:scale-95 transition-transform backdrop-blur-xl"
+      class="w-14 h-14 rounded-2xl bg-black/75 border border-white/15 shadow-2xl overflow-hidden relative flex items-center justify-center cursor-pointer active:scale-95 transition-transform backdrop-blur-2xl"
       onclick={toggleMiniMode}
       title="Click to expand"
     >
@@ -784,9 +784,9 @@
 {:else}
   <main class="h-screen w-full bg-transparent">
     <div
-      class="h-screen w-full flex flex-col overflow-hidden rounded-xl border border-white/[0.08] shadow-2xl backdrop-blur-xl select-none {$isDraggable
+      class="h-screen w-full flex flex-col overflow-hidden rounded-xl border border-white/10 shadow-2xl backdrop-blur-2xl select-none {$isDraggable
         ? ''
-        : 'pointer-events-none'} bg-black/50"
+        : 'pointer-events-none'} bg-transparent"
     >
       {#if !$isMinimized}
         <!-- Spotify-style layout -->
