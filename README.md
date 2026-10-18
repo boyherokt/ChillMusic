@@ -1,11 +1,11 @@
-# 🎵 Chill Music – Trình phát nhạc MIDI cho Game (Where Winds Meet & Yanshan)
+# Chill Music – Trình phát nhạc MIDI cho Game (Where Winds Meet & Yanshan)
 
-Trình phát nhạc MIDI thông minh dạng cửa sổ phủ (Overlay) hiện đại phong cách Spotify, tự động mô phỏng bấm phím nhạc cụ trong game (**Where Winds Meet / Yên Vân Thập Lục Thanh - yysls**).
+Trình phát nhạc MIDI dạng cửa sổ phủ (Overlay) hiện đại phong cách Spotify, tự động mô phỏng phím bấm nhạc cụ trong game (**Where Winds Meet / Yên Vân Thập Lục Thanh - yysls**).
 
-> 💖 **Lời cảm ơn & Nguồn gốc dự án:**  
-> Dự án được làm lại (rework & tiếp tục phát triển) từ dự án mã nguồn mở ban đầu của tác giả **[YueLyn (SnowiyQ)](https://github.com/SnowiyQ/Where-Winds-Meet-Midi-Player)**. Xin gửi lời cảm ơn chân thành và sâu sắc nhất đến tác giả **YueLyn** vì đã tạo nên một nền móng tuyệt vời!  
-> Vì dự án gốc hiện đã dừng phát triển tính năng mới, **Hưng (Vùng Đất Chill)** quyết định tiếp tục duy trì, làm mới giao diện, tối ưu hoá logic hàng chờ/ngẫu nhiên chuẩn Spotify và phát triển thêm các tính năng mới phục vụ cộng đồng.  
-> Mọi ý kiến đóng góp, báo lỗi và Pull Request từ các bạn luôn luôn được chào đón!
+> **Nguồn gốc dự án & Lời cảm ơn:**  
+> Dự án được làm lại (rework) và tiếp tục phát triển dựa trên dự án mã nguồn mở của tác giả **[YueLyn (SnowiyQ)](https://github.com/SnowiyQ/Where-Winds-Meet-Midi-Player)**. Xin chân thành cảm ơn tác giả **YueLyn** vì nền tảng tuyệt vời ban đầu.  
+> Do dự án gốc hiện đã ngừng phát triển tính năng mới, **Hưng (Vùng Đất Chill)** tiếp tục duy trì, bảo trì lỗi, nâng cấp logic phát nhạc Spotify và phát triển thêm các tính năng phục vụ cộng đồng.  
+> Dự án luôn hoan nghênh mọi ý kiến đóng góp, báo lỗi và Pull Request.
 
 ---
 
@@ -22,7 +22,7 @@ Trình phát nhạc MIDI thông minh dạng cửa sổ phủ (Overlay) hiện đ
 
 ---
 
-## 🎬 Video Demo tính năng
+## Video Demo
 
 * **Demo phát nhạc tự động:**  
   https://github.com/user-attachments/assets/4d25e203-0e4f-4b0f-8dc4-e855ce5e6647  
@@ -30,8 +30,8 @@ Trình phát nhạc MIDI thông minh dạng cửa sổ phủ (Overlay) hiện đ
 * **Demo đồng bộ & điều khiển:**  
   https://github.com/user-attachments/assets/5223ff30-a859-4433-84c0-bfb3d8a8ed46  
 
-### 🟢 Chế độ Thu nhỏ (Mini Floating Icon)
-Bấm phím **`Insert`** để thu nhỏ trình phát thành icon tròn mờ lơ lửng trên màn hình game. Icon phát sáng viền xanh lá khi nhạc đang chơi.
+### Chế độ Thu nhỏ (Mini Mode)
+Nhấn **`Insert`** để thu nhỏ trình phát thành icon tròn mờ lơ lửng trên màn hình game. Icon sáng viền xanh lá khi nhạc đang phát.
 
 <p align="center">
   <img width="64" height="89" alt="Mini mode icon" src="https://github.com/user-attachments/assets/f0de318f-6a1a-4e92-93c8-ba73b42d4d13" />
@@ -39,83 +39,82 @@ Bấm phím **`Insert`** để thu nhỏ trình phát thành icon tròn mờ lơ
 
 ---
 
-## ✨ Điểm nổi bật & Cập nhật mới (v1.2.1)
+## Tính năng nổi bật (v1.2.1)
 
-* 🎨 **Giao diện Kính mờ Đen tuyền (Obsidian Glass):** Thiết kế tối giản, độ trong suốt tinh tế, không chói mắt, sắc nét và hiện đại.
-* 🎧 **Hàng chờ & Phát ngẫu nhiên chuẩn Spotify:**
-  * **Hàng chờ ưu tiên (User Queue):** Tách biệt với danh sách đang nghe, phát hết bài đợi sẽ tự động quay lại ngữ cảnh trước đó.
-  * **Xáo trộn bài không lặp lại (Fisher-Yates Shuffle):** Tất cả các bài trong danh sách chỉ phát đúng 1 lần duy nhất trong một chu kỳ xáo trộn.
-  * Tự động chọn 1 bài ngẫu nhiên để phát ngay khi bấm "Phát ngẫu nhiên" ở Thư viện, Playlist hay Yêu thích.
-* 🎮 **Hỗ trợ nhận diện cửa sổ game:** Nhận diện tự động Where Winds Meet và Yên Vân Thập Lục Thanh (`yysls.exe`).
-* 🎹 **Chế độ phím đa dạng:** Hỗ trợ 21 phím tự nhiên hoặc 36 phím bán âm (kèm tổ hợp Shift/Ctrl).
-* ⚡ **Bộ phím tắt toàn cục (Global Hotkeys):** Dừng/Phát (F9), Lùi bài (F10), Chuyển bài (F11), Dừng hẳn (F12) ngay cả khi đang tập trung chơi trong game.
-* 🌐 **Chơi nhóm (Band Mode) & Chia sẻ P2P:** Kết nối nhiều người chơi cùng lúc để hòa tấu các bài MIDI nhiều bè nhạc cụ.
-* 🇻🇳 **Ngôn ngữ:** Hỗ trợ đầy đủ Tiếng Việt cùng 5 ngôn ngữ khác (Anh, Trung, Nhật, Hàn, Thái).
+* **Giao diện Kính mờ Đen tuyền (Obsidian Glass):** Thiết kế tối giản, độ trong suốt tinh tế, sắc nét và hiện đại.
+* **Hàng chờ & Phát ngẫu nhiên chuẩn Spotify:**
+  * **Hàng chờ ưu tiên (User Queue):** Tách biệt với danh sách đang nghe, phát hết hàng chờ sẽ tự động tiếp tục ngữ cảnh trước đó.
+  * **Xáo trộn bài không lặp lại (Fisher-Yates Shuffle):** Tất cả các bài trong danh sách chỉ phát đúng 1 lần trong mỗi chu kỳ.
+  * Tự động chọn ngẫu nhiên bài xuất phát khi bấm "Phát ngẫu nhiên" tại Thư viện, Playlist hay Yêu thích.
+* **Tự động nhận diện cửa sổ game:** Hỗ trợ Where Winds Meet và Yên Vân Thập Lục Thanh (`yysls.exe`).
+* **Chế độ phím linh hoạt:** Hỗ trợ 21 phím tự nhiên hoặc 36 phím bán âm (kèm tổ hợp Shift/Ctrl).
+* **Phím tắt toàn cục (Global Hotkeys):** Dừng/Phát (F9), Lùi bài (F10), Chuyển bài (F11), Dừng hẳn (F12) ngay cả khi đang thao tác trong game.
+* **Chơi nhóm (Band Mode) & Chia sẻ P2P:** Kết nối nhiều người chơi qua mạng ngang hàng để hòa tấu các bài MIDI nhiều bè.
+* **Hỗ trợ đa ngôn ngữ:** Tiếng Việt (mặc định), English, 日本語, 한국어, ไทย, 中文.
 
 ---
 
-## 🚀 Hướng dẫn sử dụng nhanh
+## Hướng dẫn sử dụng nhanh
 
 ### 1. Chuẩn bị file nhạc MIDI
-Tạo hoặc mở thư mục `album` nằm cạnh file thực thi và chép các file `.mid` của bạn vào đó:
+Tạo hoặc mở thư mục `album` nằm cạnh file thực thi và chép các file `.mid` vào:
 ```text
 Chill-Music/
 ├── chill-music.exe
 ├── locales/          <- Thư mục chứa các file ngôn ngữ giao diện
-├── album/            <- Đặt các bài nhạc .mid của bạn tại đây!
+├── album/            <- Đặt các bài nhạc .mid tại đây
 │   ├── BaiHat1.mid
 │   └── BaiHat2.mid
 ```
 
 ### 2. Khởi chạy & Phát nhạc
-1. Mở game và vào chế độ chơi nhạc cụ trong game.
-2. Nhấp chuột phải vào `chill-music.exe` chọn **Run as administrator** *(Bắt buộc quyền Admin để ứng dụng có thể giả lập thao tác gõ phím vào cửa sổ game)*.
-3. Chọn bài hát trong Thư viện và bấm **Play**!
+1. Mở game và vào chế độ nhạc cụ.
+2. Nhấp chuột phải vào `chill-music.exe` chọn **Run as administrator** (bắt buộc quyền Admin để giả lập thao tác phím vào cửa sổ game).
+3. Chọn bài hát trong Thư viện và bấm **Play**.
 
 ---
 
-## ⌨️ Phím tắt mặc định
+## Phím tắt mặc định
 
 | Phím | Chức năng |
 | :--- | :--- |
 | **`F9`** | Phát / Tạm dừng (Play / Pause) |
-| **`F10`** | Lùi về bài trước (hoặc tua về 0:00 nếu đã chơi >3s) |
+| **`F10`** | Lùi về bài trước (hoặc tua về 0:00 nếu đã phát >3s) |
 | **`F11`** | Chuyển sang bài kế tiếp (Next) |
 | **`F12`** | Dừng phát nhạc (Stop) |
-| **`Insert`** | Bật / tắt chế độ thu nhỏ (Mini Floating Icon) |
-| **`[` / `]`** | Chuyển đổi nhanh chế độ tính nốt nhạc |
+| **`Insert`** | Bật / tắt chế độ thu nhỏ (Mini Mode) |
+| **`[` / `]`** | Chuyển đổi nhanh chế độ tính nốt |
 
-*(Bạn có thể tùy chỉnh lại phím tắt trong mục **Settings → Keybindings**).*
+*(Có thể tùy chỉnh lại phím tắt trong **Settings → Keybindings**).*
 
 ---
 
-## 🛠 Tự build từ mã nguồn (Building from Source)
+## Tự biên dịch từ mã nguồn (Build from source)
 
 Dự án sử dụng **Tauri v2 + Rust + Bun + Svelte 5**:
 
-1. **Yêu cầu cài đặt:**
+1. **Yêu cầu môi trường:**
    * [Bun](https://bun.sh)
-   * [Rust & Cargo](https://rustup.rs) (phiên bản ổn định mới nhất)
-   * C++ Build Tools (Visual Studio 2022 Community hoặc Build Tools có chọn C++)
+   * [Rust & Cargo](https://rustup.rs) (bản ổn định)
+   * C++ Build Tools (Visual Studio 2022 Community hoặc Build Tools)
 
-2. **Chạy chế độ lập trình (Dev Mode):**
-   Chạy file **`dev.bat`** (script tự động xin quyền Admin, thiết lập môi trường C++ và khởi chạy).
+2. **Chế độ phát triển (Dev Mode):**
+   Chạy file **`dev.bat`** (tự động xin quyền Admin, thiết lập môi trường C++ và khởi chạy).
 
 3. **Đóng gói phát hành (Build Release):**
-   Chạy file **`build.bat`** hoặc dòng lệnh:
+   Chạy file **`build.bat`** hoặc lệnh:
    ```bash
    bun install
    bun run tauri build
    ```
-   File thực thi `.exe` sau khi build xong sẽ nằm tại:
+   File thực thi `.exe` phát hành nằm tại:
    `src-tauri/target/release/chill-music.exe`
 
 ---
 
-## 🤝 Tham gia & Đóng góp
+## Đóng góp & Bản quyền
 
-Dự án phi lợi nhuận phục vụ cộng đồng yêu âm nhạc trong game:
-* **Báo lỗi & Đóng góp ý tưởng:** Vui lòng tạo [Issue](https://github.com/boyherokt/ChillMusic/issues) hoặc gửi Pull Request.
-* **Giao lưu kết bạn:** Tham gia cộng đồng **[Discord – Vùng Đất Chill](https://discord.com/invite/c9a4paH47J)**.
-* **Tác giả phát triển hiện tại:** **Hưng (Vùng Đất Chill)**.
+* **Báo lỗi & Đóng góp ý tưởng:** Tạo [Issue](https://github.com/boyherokt/ChillMusic/issues) hoặc gửi Pull Request.
+* **Cộng đồng giao lưu:** **[Discord – Vùng Đất Chill](https://discord.com/invite/c9a4paH47J)**.
+* **Người duy trì & phát triển hiện tại:** **Hưng (Vùng Đất Chill)**.
 * **Tác giả gốc:** **YueLyn (SnowiyQ)**.
