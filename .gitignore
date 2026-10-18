@@ -44,4 +44,3 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Runtime user data
 config.json
 playlists.json
-/locales/
