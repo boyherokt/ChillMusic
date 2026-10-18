@@ -26,14 +26,14 @@ macro_rules! app_error {
 fn init_logger() {
     let log_path = std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join("wwm-overlay.log")))
-        .unwrap_or_else(|| std::path::PathBuf::from("wwm-overlay.log"));
+        .and_then(|p| p.parent().map(|d| d.join("chill-music.log")))
+        .unwrap_or_else(|| std::path::PathBuf::from("chill-music.log"));
 
     let config = ConfigBuilder::new().set_time_format_rfc3339().build();
 
     if let Ok(file) = File::create(&log_path) {
         let _ = WriteLogger::init(LevelFilter::Info, config, file);
-        info!("=== WWM Overlay Started ===");
+        info!("=== Chill Music Started ===");
     }
 }
 use serde::{Deserialize, Serialize};
@@ -57,7 +57,7 @@ static ALBUM_PATH: RwLock<Option<String>> = RwLock::new(None);
 // Keybindings configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyBindings {
-    pub pause_resume: String, // Default: "ScrollLock"
+    pub pause_resume: String, // Default: "F9"
     pub stop: String,         // Default: "F12"
     pub previous: String,     // Default: "F10"
     pub next: String,         // Default: "F11"
@@ -69,7 +69,7 @@ pub struct KeyBindings {
 impl Default for KeyBindings {
     fn default() -> Self {
         KeyBindings {
-            pause_resume: "ScrollLock".to_string(),
+            pause_resume: "F9".to_string(),
             stop: "F12".to_string(),
             previous: "F10".to_string(),
             next: "F11".to_string(),
@@ -417,6 +417,7 @@ struct MidiFile {
     note_density: f32,
     hash: String,
     size: u64,
+    mtime: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -548,6 +549,7 @@ async fn load_midi_files() -> Result<Vec<MidiFile>, String> {
                         note_density: cached.note_density,
                         hash: cached.hash.clone(),
                         size: cached.size,
+                        mtime,
                     });
                     continue;
                 }
@@ -584,6 +586,7 @@ async fn load_midi_files() -> Result<Vec<MidiFile>, String> {
                 note_density: meta.note_density,
                 hash: file_hash,
                 size: file_size,
+                mtime,
             });
         }
     }
@@ -798,6 +801,7 @@ async fn load_midi_files_streaming(
                             note_density: cached.note_density,
                             hash: cached.hash.clone(),
                             size: cached.size,
+                            mtime,
                         });
                         continue;
                     }
@@ -829,6 +833,7 @@ async fn load_midi_files_streaming(
                             note_density: meta.note_density,
                             hash: file_hash.clone(),
                             size: file_size,
+                            mtime: *mtime,
                         },
                         path_str.clone(),
                         *mtime,
@@ -1398,6 +1403,7 @@ async fn import_midi_file(source_path: String) -> Result<MidiFile, String> {
     let file_size = std::fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
     let file_hash = compute_file_hash(&dest_path).unwrap_or_else(|| format!("{:x}", file_size));
 
+    let mtime = get_file_mtime(&dest_path);
     Ok(MidiFile {
         name,
         path: dest_path.to_string_lossy().to_string(),
@@ -1406,6 +1412,7 @@ async fn import_midi_file(source_path: String) -> Result<MidiFile, String> {
         note_density: meta.note_density,
         hash: file_hash,
         size: file_size,
+        mtime,
     })
 }
 
@@ -1471,6 +1478,7 @@ async fn import_from_zip(zip_path: String) -> Result<Vec<MidiFile>, String> {
         });
         let hash = compute_file_hash(&dest).unwrap_or_default();
 
+        let mtime = get_file_mtime(&dest);
         imported.push(MidiFile {
             name,
             path: dest.to_string_lossy().to_string(),
@@ -1479,6 +1487,7 @@ async fn import_from_zip(zip_path: String) -> Result<Vec<MidiFile>, String> {
             note_density: meta.note_density,
             hash,
             size: contents.len() as u64,
+            mtime,
         });
     }
 
@@ -2181,6 +2190,7 @@ async fn download_midi_from_url(url: String) -> Result<MidiFile, String> {
     let file_size = std::fs::metadata(&final_path).map(|m| m.len()).unwrap_or(0);
     let file_hash = compute_file_hash(&final_path).unwrap_or_else(|| format!("{:x}", file_size));
 
+    let mtime = get_file_mtime(&final_path);
     Ok(MidiFile {
         name,
         path: final_path.to_string_lossy().to_string(),
@@ -2189,6 +2199,7 @@ async fn download_midi_from_url(url: String) -> Result<MidiFile, String> {
         note_density: meta.note_density,
         hash: file_hash,
         size: file_size,
+        mtime,
     })
 }
 
@@ -2223,7 +2234,7 @@ async fn check_for_update(current_version: String) -> Result<Option<UpdateInfo>,
     use std::io::Read;
 
     let response = ureq::get(
-        "https://api.github.com/repos/SnowiyQ/Where-Winds-Meet-Midi-Player/releases/latest",
+        "https://api.github.com/repos/boyherokt/ChillMusic/releases/latest",
     )
     .set("User-Agent", "WWM-Overlay")
     .call()
@@ -2278,11 +2289,11 @@ async fn check_for_update(current_version: String) -> Result<Option<UpdateInfo>,
         })
         .and_then(|a| a["name"].as_str())
         .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("wwm-overlay-{}.zip", latest_version));
+        .unwrap_or_else(|| format!("Chill-Music-{}.zip", latest_version));
 
     let release_url = json["html_url"]
         .as_str()
-        .unwrap_or("https://github.com/SnowiyQ/Where-Winds-Meet-Midi-Player/releases/latest")
+        .unwrap_or("https://github.com/boyherokt/ChillMusic/releases/latest")
         .to_string();
 
     match download_url {
@@ -2768,6 +2779,7 @@ fn get_existing_files_by_hash(
                             note_density: meta.note_density,
                             hash,
                             size: file_size,
+                            mtime: get_file_mtime(&path),
                         },
                     );
                 }
@@ -2891,6 +2903,7 @@ async fn import_zip(zip_path: String) -> Result<ImportResult, String> {
 
         let file_size = contents.len() as u64;
 
+        let mtime = get_file_mtime(&save_path);
         imported_files.push(MidiFile {
             name,
             path: save_path.to_string_lossy().to_string(),
@@ -2899,6 +2912,7 @@ async fn import_zip(zip_path: String) -> Result<ImportResult, String> {
             note_density: meta.note_density,
             hash: file_hash,
             size: file_size,
+            mtime,
         });
 
         app_log!("[IMPORT] Imported: {}", save_path.to_string_lossy());
@@ -3018,7 +3032,7 @@ fn register_global_hotkeys() -> Vec<(String, bool)> {
 }
 
 // Cached keybinding VK codes for low-level hook
-static mut CACHED_PAUSE_RESUME_VK: u32 = 0x91; // ScrollLock
+static mut CACHED_PAUSE_RESUME_VK: u32 = 0x78; // F9
 static mut CACHED_STOP_VK: u32 = 0x7B; // F12
 static mut CACHED_PREVIOUS_VK: u32 = 0x79; // F10
 static mut CACHED_NEXT_VK: u32 = 0x7A; // F11
@@ -3211,18 +3225,10 @@ fn start_hotkey_listener(app_handle: AppHandle) {
                     break;
                 }
 
-                if msg.message == WM_HOTKEY && !KEYBINDINGS_DISABLED {
-                    let hotkey_id = msg.wParam.0 as i32;
-
-                    let action = match hotkey_id {
-                        HOTKEY_PAUSE_RESUME => "pause_resume",
-                        HOTKEY_STOP_END | HOTKEY_STOP_F12 => "stop",
-                        HOTKEY_PREV_F10 => "previous",
-                        HOTKEY_NEXT_F11 => "next",
-                        _ => continue,
-                    };
-
-                    let _ = app_handle.emit("global-shortcut", action);
+                // Hotkey messages are already handled by the low-level keyboard hook
+                // which is installed in the same thread. Handling them here causes double triggers.
+                if msg.message == WM_HOTKEY {
+                    continue;
                 }
 
                 // Dispatch other messages (needed for low-level hook to work)

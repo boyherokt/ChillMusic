@@ -31,6 +31,7 @@
     shareNotification,
   } from "../stores/library.js";
   import { midiFiles } from "../stores/player.js";
+  import { searchMatch } from "../utils/stringUtils.js";
 
   let searchQuery = "";
   let librarySortBy = "name-asc";
@@ -42,6 +43,16 @@
     { id: "name-desc", label: "Z-A", icon: "mdi:sort-alphabetical-descending" },
     { id: "bpm-desc", label: "BPM ↓", icon: "mdi:music-note" },
     { id: "bpm-asc", label: "BPM ↑", icon: "mdi:music-note-outline" },
+    {
+      id: "date-desc",
+      label: $t("sort.dateDesc"),
+      icon: "mdi:calendar-clock",
+    },
+    {
+      id: "date-asc",
+      label: $t("sort.dateAsc"),
+      icon: "mdi:calendar",
+    },
   ];
   let showDevSettings = false;
   let serverUrlInput = "";
@@ -59,6 +70,16 @@
     { id: "name-desc", label: "Z-A", icon: "mdi:sort-alphabetical-descending" },
     { id: "bpm-desc", label: "BPM ↓", icon: "mdi:music-note" },
     { id: "bpm-asc", label: "BPM ↑", icon: "mdi:music-note-outline" },
+    {
+      id: "date-desc",
+      label: $t("sort.dateDesc"),
+      icon: "mdi:calendar-clock",
+    },
+    {
+      id: "date-asc",
+      label: $t("sort.dateAsc"),
+      icon: "mdi:calendar",
+    },
   ];
 
   // Computed shared songs count
@@ -73,24 +94,25 @@
 
     // Filter by search query
     if (shareSearchQuery) {
-      const q = shareSearchQuery.toLowerCase();
-      songs = songs.filter(f => f.name.toLowerCase().includes(q));
+      songs = songs.filter((f) => searchMatch(shareSearchQuery, f.name));
     }
 
     // Filter by letter
     if (shareLetterFilter) {
       if (shareLetterFilter === "#") {
-        songs = songs.filter(f => !/^[a-zA-Z]/.test(f.name));
+        songs = songs.filter((f) => !/^[a-zA-Z]/.test(f.name));
       } else {
-        songs = songs.filter(f => f.name.toUpperCase().startsWith(shareLetterFilter));
+        songs = songs.filter((f) =>
+          f.name.toUpperCase().startsWith(shareLetterFilter),
+        );
       }
     }
 
     // Filter by selection status
     if (shareFilterMode === "selected") {
-      songs = songs.filter(f => $sharedSongs.includes(f.path));
+      songs = songs.filter((f) => $sharedSongs.includes(f.path));
     } else if (shareFilterMode === "unselected") {
-      songs = songs.filter(f => !$sharedSongs.includes(f.path));
+      songs = songs.filter((f) => !$sharedSongs.includes(f.path));
     }
 
     // Sort
@@ -107,6 +129,12 @@
       case "bpm-asc":
         songs.sort((a, b) => (a.bpm || 0) - (b.bpm || 0));
         break;
+      case "date-asc":
+        songs.sort((a, b) => (a.mtime || 0) - (b.mtime || 0));
+        break;
+      case "date-desc":
+        songs.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+        break;
     }
 
     return songs;
@@ -115,8 +143,8 @@
   // Count songs starting with each letter (for badge display)
   $: letterCounts = (() => {
     const counts = { "#": 0 };
-    alphabet.slice(1).forEach(l => counts[l] = 0);
-    $midiFiles.forEach(f => {
+    alphabet.slice(1).forEach((l) => (counts[l] = 0));
+    $midiFiles.forEach((f) => {
       const first = f.name.charAt(0).toUpperCase();
       if (/[A-Z]/.test(first)) {
         counts[first]++;
@@ -130,22 +158,28 @@
   // Filter and sort global songs
   $: filteredSongs = (() => {
     let songs = searchQuery
-      ? $globalSongs.filter(song => song.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+      ? $globalSongs.filter((song) => searchMatch(searchQuery, song.name))
       : [...$globalSongs];
 
     // Sort
     switch (librarySortBy) {
       case "name-asc":
-        songs.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        songs.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         break;
       case "name-desc":
-        songs.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+        songs.sort((a, b) => (b.name || "").localeCompare(a.name || ""));
         break;
       case "bpm-desc":
         songs.sort((a, b) => (b.bpm || 0) - (a.bpm || 0));
         break;
       case "bpm-asc":
         songs.sort((a, b) => (a.bpm || 0) - (b.bpm || 0));
+        break;
+      case "date-asc":
+        songs.sort((a, b) => (a.mtime || 0) - (b.mtime || 0));
+        break;
+      case "date-desc":
+        songs.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
         break;
     }
 
@@ -155,14 +189,14 @@
   function toggleSongShare(path) {
     const current = $sharedSongs;
     if (current.includes(path)) {
-      setSharedSongs(current.filter(p => p !== path));
+      setSharedSongs(current.filter((p) => p !== path));
     } else {
       setSharedSongs([...current, path]);
     }
   }
 
   function selectAllSongs() {
-    setSharedSongs($midiFiles.map(f => f.path));
+    setSharedSongs($midiFiles.map((f) => f.path));
   }
 
   function deselectAllSongs() {
@@ -171,16 +205,16 @@
 
   // Select only currently visible/filtered songs
   function selectVisibleSongs() {
-    const visiblePaths = new Set(sharePickerSongs.map(f => f.path));
+    const visiblePaths = new Set(sharePickerSongs.map((f) => f.path));
     const currentSelected = new Set($sharedSongs);
-    visiblePaths.forEach(p => currentSelected.add(p));
+    visiblePaths.forEach((p) => currentSelected.add(p));
     setSharedSongs([...currentSelected]);
   }
 
   // Deselect only currently visible/filtered songs
   function deselectVisibleSongs() {
-    const visiblePaths = new Set(sharePickerSongs.map(f => f.path));
-    setSharedSongs($sharedSongs.filter(p => !visiblePaths.has(p)));
+    const visiblePaths = new Set(sharePickerSongs.map((f) => f.path));
+    setSharedSongs($sharedSongs.filter((p) => !visiblePaths.has(p)));
   }
 
   // Reset share picker filters
@@ -214,7 +248,7 @@
   });
 
   // Reactive set of owned song hashes (updates when midiFiles changes)
-  $: ownedHashes = new Set($midiFiles.map(f => f.hash));
+  $: ownedHashes = new Set($midiFiles.map((f) => f.hash));
 
   function openDownloadModal(song) {
     downloadingSong = song;
@@ -224,7 +258,11 @@
   async function confirmDownload() {
     if (!downloadingSong) return;
     showDownloadModal = false;
-    await requestSong(downloadingSong.peerId, downloadingSong.hash, downloadingSong.name);
+    await requestSong(
+      downloadingSong.peerId,
+      downloadingSong.hash,
+      downloadingSong.name,
+    );
     downloadingSong = null;
   }
 
@@ -252,19 +290,34 @@
   <div
     bind:this={scrollContainer}
     onscroll={handleScroll}
-    class="flex-1 overflow-y-auto scrollbar-thin min-h-0 px-1 {$downloadProgress || $libraryError ? 'pb-16' : 'pb-2'} {showTopMask && showBottomMask ? 'scroll-mask-both' : showTopMask ? 'scroll-mask-top' : showBottomMask ? 'scroll-mask-bottom' : ''}"
+    class="flex-1 overflow-y-auto scrollbar-thin min-h-0 px-1 {$downloadProgress ||
+    $libraryError
+      ? 'pb-16'
+      : 'pb-2'} {showTopMask && showBottomMask
+      ? 'scroll-mask-both'
+      : showTopMask
+        ? 'scroll-mask-top'
+        : showBottomMask
+          ? 'scroll-mask-bottom'
+          : ''}"
   >
     <!-- Header -->
     <div class="mb-4">
       <div class="flex items-center gap-3 mb-2">
-        <div class="w-12 h-12 rounded-lg bg-white/10 flex items-center justify-center">
+        <div
+          class="w-12 h-12 rounded-lg bg-white/10 flex items-center justify-center"
+        >
           <Icon icon="mdi:earth" class="w-6 h-6 text-[#1db954]" />
         </div>
         <div class="flex-1">
           <h2 class="text-xl font-bold">{$t("share.songLibrary")}</h2>
           <p class="text-xs text-white/60">
             {#if $libraryConnected}
-              {$onlinePeers} {$onlinePeers !== 1 ? $t("share.peersOnlinePlural") : $t("share.peersOnline")} &bull; {$globalSongs.length} {$t("library.songs")}
+              {$onlinePeers}
+              {$onlinePeers !== 1
+                ? $t("share.peersOnlinePlural")
+                : $t("share.peersOnline")} &bull; {$globalSongs.length}
+              {$t("library.songs")}
             {:else}
               {$t("share.browseShare")}
             {/if}
@@ -272,19 +325,32 @@
         </div>
         <!-- Toggle -->
         <button
-          class="w-10 h-5 rounded-full transition-colors {$libraryEnabled ? 'bg-[#1db954]' : 'bg-white/20'}"
+          class="w-10 h-5 rounded-full transition-colors {$libraryEnabled
+            ? 'bg-[#1db954]'
+            : 'bg-white/20'}"
           onclick={toggleLibrary}
-          title={$libraryEnabled ? $t("share.disableSharing") : $t("share.enableSharing")}
+          title={$libraryEnabled
+            ? $t("share.disableSharing")
+            : $t("share.enableSharing")}
         >
-          <div class="w-4 h-4 rounded-full bg-white transition-transform {$libraryEnabled ? 'translate-x-5' : 'translate-x-0.5'}"></div>
+          <div
+            class="w-4 h-4 rounded-full bg-white transition-transform {$libraryEnabled
+              ? 'translate-x-5'
+              : 'translate-x-0.5'}"
+          ></div>
         </button>
       </div>
     </div>
 
     {#if !$libraryEnabled}
       <!-- Disabled State -->
-      <div class="flex flex-col items-center justify-center py-12 text-center" in:fade>
-        <div class="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+      <div
+        class="flex flex-col items-center justify-center py-12 text-center"
+        in:fade
+      >
+        <div
+          class="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4"
+        >
           <Icon icon="mdi:share-off" class="w-8 h-8 text-white/30" />
         </div>
         <p class="text-white/60 mb-2">{$t("share.sharingDisabled")}</p>
@@ -303,20 +369,28 @@
         <div class="p-3 rounded-lg bg-white/5">
           <button
             class="w-full flex items-center justify-between text-xs text-white/70 hover:text-white transition-colors"
-            onclick={() => showDevSettings = !showDevSettings}
+            onclick={() => (showDevSettings = !showDevSettings)}
           >
             <span class="flex items-center gap-2">
               <Icon icon="mdi:developer-board" class="w-3.5 h-3.5" />
               {$t("share.devSettings")}
             </span>
-            <Icon icon={showDevSettings ? "mdi:chevron-up" : "mdi:chevron-down"} class="w-4 h-4" />
+            <Icon
+              icon={showDevSettings ? "mdi:chevron-up" : "mdi:chevron-down"}
+              class="w-4 h-4"
+            />
           </button>
 
           {#if showDevSettings}
-            <div class="mt-3 pt-3 border-t border-white/10 space-y-3" transition:fade={{ duration: 150 }}>
+            <div
+              class="mt-3 pt-3 border-t border-white/10 space-y-3"
+              transition:fade={{ duration: 150 }}
+            >
               <!-- Discovery Server URL -->
               <div class="space-y-1">
-                <label class="text-xs text-white/50">{$t("share.discoveryUrl")}</label>
+                <label class="text-xs text-white/50"
+                  >{$t("share.discoveryUrl")}</label
+                >
                 <div class="flex gap-2">
                   <input
                     type="text"
@@ -332,7 +406,10 @@
                   </button>
                   <button
                     class="px-2 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs transition-colors"
-                    onclick={() => { serverUrlInput = 'https://discovery.chuaii.me'; saveServerUrl(); }}
+                    onclick={() => {
+                      serverUrlInput = "https://discovery.chuaii.me";
+                      saveServerUrl();
+                    }}
                     title={$t("settings.storage.resetToDefault")}
                   >
                     <Icon icon="mdi:refresh" class="w-3.5 h-3.5" />
@@ -342,7 +419,9 @@
 
               <!-- Host Server -->
               <div class="space-y-1">
-                <label class="text-xs text-white/50">{$t("share.hostServer")}</label>
+                <label class="text-xs text-white/50"
+                  >{$t("share.hostServer")}</label
+                >
                 <div class="flex gap-2 items-center">
                   <input
                     type="number"
@@ -374,13 +453,19 @@
 
         <!-- Connecting spinner -->
         <div class="flex flex-col items-center justify-center py-8 text-center">
-          <Icon icon="mdi:loading" class="w-12 h-12 text-[#1db954] animate-spin mb-4" />
+          <Icon
+            icon="mdi:loading"
+            class="w-12 h-12 text-[#1db954] animate-spin mb-4"
+          />
           <p class="text-white/60">{$t("share.connecting")}</p>
         </div>
 
         <!-- Error Display -->
         {#if $libraryError}
-          <div class="p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2" transition:fade>
+          <div
+            class="p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2"
+            transition:fade
+          >
             <Icon icon="mdi:alert-circle" class="w-4 h-4 text-red-400" />
             <p class="text-xs text-red-400 flex-1">{$libraryError}</p>
             <button
@@ -399,10 +484,18 @@
         <div class="p-3 rounded-lg bg-white/5 space-y-2">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
-              <div class="w-2 h-2 rounded-full bg-[#1db954] animate-pulse"></div>
+              <div
+                class="w-2 h-2 rounded-full bg-[#1db954] animate-pulse"
+              ></div>
               <span class="text-xs text-white/70">{$t("share.connected")}</span>
               <span class="text-xs text-white/40">•</span>
-              <span class="text-xs text-[#1db954]">{$t("share.sharing")} {sharedCount} {sharedCount !== 1 ? $t("library.songs") : $t("library.song")}</span>
+              <span class="text-xs text-[#1db954]"
+                >{$t("share.sharing")}
+                {sharedCount}
+                {sharedCount !== 1
+                  ? $t("library.songs")
+                  : $t("library.song")}</span
+              >
             </div>
             <button
               class="text-xs text-white/50 hover:text-white transition-colors flex items-center gap-1"
@@ -416,7 +509,12 @@
               <!-- DEV: Test notification button -->
               <button
                 class="text-xs text-orange-400/70 hover:text-orange-400 transition-colors flex items-center gap-1"
-                onclick={() => shareNotification.set({ songName: "Test Song.mid", peerName: "TestUser123", timestamp: Date.now() })}
+                onclick={() =>
+                  shareNotification.set({
+                    songName: "Test Song.mid",
+                    peerName: "TestUser123",
+                    timestamp: Date.now(),
+                  })}
                 title="[DEV] Test share notification"
               >
                 <Icon icon="mdi:bell-ring" class="w-3 h-3" />
@@ -430,14 +528,24 @@
             <!-- Share All Toggle -->
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
-                <Icon icon="mdi:share-variant" class="w-3.5 h-3.5 text-white/50" />
-                <span class="text-xs text-white/70">{$t("share.shareAll")}</span>
+                <Icon
+                  icon="mdi:share-variant"
+                  class="w-3.5 h-3.5 text-white/50"
+                />
+                <span class="text-xs text-white/70">{$t("share.shareAll")}</span
+                >
               </div>
               <button
-                class="w-8 h-4 rounded-full transition-colors {$shareAll ? 'bg-[#1db954]' : 'bg-white/20'}"
+                class="w-8 h-4 rounded-full transition-colors {$shareAll
+                  ? 'bg-[#1db954]'
+                  : 'bg-white/20'}"
                 onclick={toggleShareAll}
               >
-                <div class="w-3 h-3 rounded-full bg-white transition-transform {$shareAll ? 'translate-x-4' : 'translate-x-0.5'}"></div>
+                <div
+                  class="w-3 h-3 rounded-full bg-white transition-transform {$shareAll
+                    ? 'translate-x-4'
+                    : 'translate-x-0.5'}"
+                ></div>
               </button>
             </div>
 
@@ -445,13 +553,15 @@
             {#if !$shareAll}
               <button
                 class="w-full py-1.5 px-3 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white/70 hover:text-white transition-colors flex items-center justify-between"
-                onclick={() => showSharePicker = true}
+                onclick={() => (showSharePicker = true)}
               >
                 <span class="flex items-center gap-2">
                   <Icon icon="mdi:playlist-check" class="w-3.5 h-3.5" />
                   {$t("share.selectToShare")}
                 </span>
-                <span class="text-white/50">{sharedCount} {$t("share.selected")}</span>
+                <span class="text-white/50"
+                  >{sharedCount} {$t("share.selected")}</span
+                >
               </button>
             {/if}
           </div>
@@ -461,20 +571,28 @@
         <div class="p-3 rounded-lg bg-white/5">
           <button
             class="w-full flex items-center justify-between text-xs text-white/70 hover:text-white transition-colors"
-            onclick={() => showDevSettings = !showDevSettings}
+            onclick={() => (showDevSettings = !showDevSettings)}
           >
             <span class="flex items-center gap-2">
               <Icon icon="mdi:developer-board" class="w-3.5 h-3.5" />
               {$t("share.devSettings")}
             </span>
-            <Icon icon={showDevSettings ? "mdi:chevron-up" : "mdi:chevron-down"} class="w-4 h-4" />
+            <Icon
+              icon={showDevSettings ? "mdi:chevron-up" : "mdi:chevron-down"}
+              class="w-4 h-4"
+            />
           </button>
 
           {#if showDevSettings}
-            <div class="mt-3 pt-3 border-t border-white/10 space-y-3" transition:fade={{ duration: 150 }}>
+            <div
+              class="mt-3 pt-3 border-t border-white/10 space-y-3"
+              transition:fade={{ duration: 150 }}
+            >
               <!-- Discovery Server URL -->
               <div class="space-y-1">
-                <label class="text-xs text-white/50">{$t("share.discoveryUrl")}</label>
+                <label class="text-xs text-white/50"
+                  >{$t("share.discoveryUrl")}</label
+                >
                 <div class="flex gap-2">
                   <input
                     type="text"
@@ -490,7 +608,10 @@
                   </button>
                   <button
                     class="px-2 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs transition-colors"
-                    onclick={() => { serverUrlInput = 'https://discovery.chuaii.me'; saveServerUrl(); }}
+                    onclick={() => {
+                      serverUrlInput = "https://discovery.chuaii.me";
+                      saveServerUrl();
+                    }}
                     title={$t("settings.storage.resetToDefault")}
                   >
                     <Icon icon="mdi:refresh" class="w-3.5 h-3.5" />
@@ -500,7 +621,9 @@
 
               <!-- Host Server -->
               <div class="space-y-1">
-                <label class="text-xs text-white/50">{$t("share.hostServer")}</label>
+                <label class="text-xs text-white/50"
+                  >{$t("share.hostServer")}</label
+                >
                 <div class="flex gap-2 items-center">
                   <input
                     type="number"
@@ -533,9 +656,11 @@
         <!-- Search & Sort -->
         {#if $globalSongs.length > 0}
           <SearchSort
-            bind:searchQuery={searchQuery}
+            bind:searchQuery
             bind:sortBy={librarySortBy}
-            placeholder={$t("share.searchAvailableSongs", { values: { count: $globalSongs.length } })}
+            placeholder={$t("share.searchAvailableSongs", {
+              values: { count: $globalSongs.length },
+            })}
             sortOptions={librarySortOptions}
           />
         {/if}
@@ -549,22 +674,34 @@
               <button
                 class="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all text-left
                   {hasIt
-                    ? 'bg-[#1db954]/5 border border-[#1db954]/20 cursor-default'
-                    : isDownloading
-                      ? 'bg-[#1db954]/10 border border-[#1db954]/30'
-                      : 'bg-white/5 border border-transparent hover:bg-white/10 hover:border-white/10 active:scale-[0.98]'
-                  }"
-                onclick={() => !hasIt && !isDownloading && openDownloadModal(song)}
+                  ? 'bg-[#1db954]/5 border border-[#1db954]/20 cursor-default'
+                  : isDownloading
+                    ? 'bg-[#1db954]/10 border border-[#1db954]/30'
+                    : 'bg-white/5 border border-transparent hover:bg-white/10 hover:border-white/10 active:scale-[0.98]'}"
+                onclick={() =>
+                  !hasIt && !isDownloading && openDownloadModal(song)}
                 disabled={hasIt || isDownloading}
                 in:fly={{ y: 10, duration: 150, delay: i * 20 }}
               >
                 <!-- Song Icon with Status -->
-                <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 relative
-                  {hasIt ? 'bg-[#1db954]/20' : isDownloading ? 'bg-[#1db954]/20' : 'bg-white/10'}">
+                <div
+                  class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 relative
+                  {hasIt
+                    ? 'bg-[#1db954]/20'
+                    : isDownloading
+                      ? 'bg-[#1db954]/20'
+                      : 'bg-white/10'}"
+                >
                   {#if hasIt}
-                    <Icon icon="mdi:check-circle" class="w-5 h-5 text-[#1db954]" />
+                    <Icon
+                      icon="mdi:check-circle"
+                      class="w-5 h-5 text-[#1db954]"
+                    />
                   {:else if isDownloading}
-                    <Icon icon="mdi:loading" class="w-5 h-5 text-[#1db954] animate-spin" />
+                    <Icon
+                      icon="mdi:loading"
+                      class="w-5 h-5 text-[#1db954] animate-spin"
+                    />
                   {:else}
                     <Icon icon="mdi:music-note" class="w-5 h-5 text-white/50" />
                   {/if}
@@ -572,7 +709,11 @@
 
                 <!-- Song Info -->
                 <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium truncate {hasIt ? 'text-[#1db954]' : 'text-white'}">
+                  <p
+                    class="text-sm font-medium truncate {hasIt
+                      ? 'text-[#1db954]'
+                      : 'text-white'}"
+                  >
                     {song.name}
                   </p>
                   <div class="flex items-center gap-2 text-xs text-white/40">
@@ -581,7 +722,7 @@
                       {song.peerName}
                     </span>
                     <span>•</span>
-                    <span>{song.bpm || '?'} BPM</span>
+                    <span>{song.bpm || "?"} BPM</span>
                     <span>•</span>
                     <span>{formatDuration(song.duration)}</span>
                   </div>
@@ -590,15 +731,23 @@
                 <!-- Action Area -->
                 <div class="flex-shrink-0 flex items-center">
                   {#if hasIt}
-                    <span class="text-xs text-[#1db954] font-medium px-2 py-1 rounded-full bg-[#1db954]/10">
+                    <span
+                      class="text-xs text-[#1db954] font-medium px-2 py-1 rounded-full bg-[#1db954]/10"
+                    >
                       {$t("share.owned")}
                     </span>
                   {:else if isDownloading}
-                    <div class="flex items-center gap-2 px-2 py-1 rounded-full bg-[#1db954]/10">
-                      <span class="text-xs text-[#1db954] font-medium">{$downloadProgress.progress}%</span>
+                    <div
+                      class="flex items-center gap-2 px-2 py-1 rounded-full bg-[#1db954]/10"
+                    >
+                      <span class="text-xs text-[#1db954] font-medium"
+                        >{$downloadProgress.progress}%</span
+                      >
                     </div>
                   {:else}
-                    <div class="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#1db954] text-white text-xs font-medium">
+                    <div
+                      class="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#1db954] text-white text-xs font-medium"
+                    >
                       <Icon icon="mdi:download" class="w-4 h-4" />
                       <span>{$t("share.get")}</span>
                     </div>
@@ -609,14 +758,24 @@
           </div>
         {:else if $globalSongs.length === 0}
           <div class="p-4 rounded-lg bg-white/5 text-center">
-            <Icon icon="mdi:music-note-off" class="w-8 h-8 text-white/30 mx-auto mb-2" />
+            <Icon
+              icon="mdi:music-note-off"
+              class="w-8 h-8 text-white/30 mx-auto mb-2"
+            />
             <p class="text-xs text-white/50">{$t("share.noSongsFromOthers")}</p>
-            <p class="text-xs text-white/40 mt-1">{$t("share.yourSongsVisible", { values: { count: sharedCount } })}</p>
+            <p class="text-xs text-white/40 mt-1">
+              {$t("share.yourSongsVisible", { values: { count: sharedCount } })}
+            </p>
           </div>
         {:else}
           <div class="p-4 rounded-lg bg-white/5 text-center">
-            <Icon icon="mdi:magnify" class="w-8 h-8 text-white/30 mx-auto mb-2" />
-            <p class="text-xs text-white/50">{$t("share.noSongsMatch")} "{searchQuery}"</p>
+            <Icon
+              icon="mdi:magnify"
+              class="w-8 h-8 text-white/30 mx-auto mb-2"
+            />
+            <p class="text-xs text-white/50">
+              {$t("share.noSongsMatch")} "{searchQuery}"
+            </p>
           </div>
         {/if}
       </div>
@@ -632,22 +791,38 @@
       <div class="space-y-2">
         <!-- Download Progress -->
         {#if $downloadProgress}
-          <div class="p-3 rounded-lg bg-[#1db954]/10 border border-[#1db954]/30 flex items-center gap-3 backdrop-blur-sm" transition:fade>
-            <Icon icon="mdi:loading" class="w-5 h-5 text-[#1db954] animate-spin flex-shrink-0" />
+          <div
+            class="p-3 rounded-lg bg-[#1db954]/10 border border-[#1db954]/30 flex items-center gap-3 backdrop-blur-sm"
+            transition:fade
+          >
+            <Icon
+              icon="mdi:loading"
+              class="w-5 h-5 text-[#1db954] animate-spin flex-shrink-0"
+            />
             <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-white truncate">{$downloadProgress.songName}</p>
+              <p class="text-sm font-medium text-white truncate">
+                {$downloadProgress.songName}
+              </p>
               <p class="text-xs text-[#1db954]">{$downloadProgress.status}</p>
             </div>
             <div class="w-12 text-right">
-              <span class="text-xs text-[#1db954] font-medium">{$downloadProgress.progress}%</span>
+              <span class="text-xs text-[#1db954] font-medium"
+                >{$downloadProgress.progress}%</span
+              >
             </div>
           </div>
         {/if}
 
         <!-- Error Display -->
         {#if $libraryError}
-          <div class="p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2 backdrop-blur-sm" transition:fade>
-            <Icon icon="mdi:alert-circle" class="w-4 h-4 text-red-400 flex-shrink-0" />
+          <div
+            class="p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2 backdrop-blur-sm"
+            transition:fade
+          >
+            <Icon
+              icon="mdi:alert-circle"
+              class="w-4 h-4 text-red-400 flex-shrink-0"
+            />
             <p class="text-xs text-red-400 flex-1">{$libraryError}</p>
             <button
               class="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
@@ -664,7 +839,10 @@
 
 <!-- Share Picker Modal - Full Screen with padding -->
 {#if showSharePicker}
-  <div class="fixed inset-0 z-50 p-2 overflow-hidden rounded-md" transition:fade={{ duration: 150 }}>
+  <div
+    class="fixed inset-0 z-50 p-2 overflow-hidden rounded-md"
+    transition:fade={{ duration: 150 }}
+  >
     <div class="absolute inset-0 bg-black/80 rounded-md"></div>
     <div
       class="relative w-full h-full bg-[#181818] rounded-lg flex flex-col overflow-hidden shadow-2xl"
@@ -672,180 +850,234 @@
       in:scale={{ duration: 200, start: 0.95, opacity: 0 }}
       out:scale={{ duration: 150, start: 0.95, opacity: 0 }}
     >
-    <!-- Top Bar -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#181818]">
-      <div class="flex items-center gap-4">
-        <button
-          class="p-2 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-          onclick={() => { showSharePicker = false; resetShareFilters(); }}
-        >
-          <Icon icon="mdi:arrow-left" class="w-5 h-5" />
-        </button>
-        <div>
-          <h2 class="text-lg font-bold">{$t("share.selectSongsToShare")}</h2>
-          <p class="text-xs text-white/50">
-            <span class="text-[#1db954] font-semibold">{$sharedSongs.length.toLocaleString()}</span> {$t("share.ofSelected", { values: { total: $midiFiles.length.toLocaleString() } })}
-            {#if sharePickerSongs.length !== $midiFiles.length}
-              <span class="text-white/30 ml-2">• {$t("share.showing", { values: { count: sharePickerSongs.length.toLocaleString() } })}</span>
-            {/if}
-          </p>
-        </div>
-      </div>
-
-      <!-- Done Button -->
-      <button
-        class="px-5 py-2 rounded-full bg-[#1db954] hover:bg-[#1ed760] text-white font-semibold text-sm transition-colors flex items-center gap-2"
-        onclick={() => { showSharePicker = false; resetShareFilters(); }}
+      <!-- Top Bar -->
+      <div
+        class="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#181818]"
       >
-        <Icon icon="mdi:check" class="w-4 h-4" />
-        {$t("share.done")}
-      </button>
-    </div>
-
-    <!-- Main Content -->
-    <div class="flex-1 flex min-h-0">
-      <!-- Left Sidebar - Alphabet -->
-      <div class="w-12 bg-[#181818] border-r border-white/5 flex flex-col py-2 overflow-y-auto scrollbar-none">
-        <button
-          class="w-full py-1.5 text-[10px] font-bold transition-all {shareLetterFilter === '' ? 'text-[#1db954] bg-[#1db954]/10' : 'text-white/40 hover:text-white hover:bg-white/5'}"
-          onclick={() => shareLetterFilter = ''}
-        >
-          ALL
-        </button>
-        {#each alphabet as letter}
-          {@const count = letterCounts[letter] || 0}
+        <div class="flex items-center gap-4">
           <button
-            class="w-full py-1 text-[11px] font-medium transition-all
-              {shareLetterFilter === letter ? 'text-[#1db954] bg-[#1db954]/10' : count > 0 ? 'text-white/40 hover:text-white hover:bg-white/5' : 'text-white/15'}"
-            onclick={() => count > 0 && (shareLetterFilter = letter)}
-            disabled={count === 0}
-            title="{count} songs"
+            class="p-2 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+            onclick={() => {
+              showSharePicker = false;
+              resetShareFilters();
+            }}
           >
-            {letter}
+            <Icon icon="mdi:arrow-left" class="w-5 h-5" />
           </button>
-        {/each}
-      </div>
-
-      <!-- Main Area -->
-      <div class="flex-1 flex flex-col min-w-0">
-        <!-- Toolbar -->
-        <div class="px-4 py-3 border-b border-white/5 space-y-3">
-          <!-- Search + Sort Row -->
-          <SearchSort
-            bind:searchQuery={shareSearchQuery}
-            bind:sortBy={shareSortBy}
-            placeholder={$t("library.searchPlaceholder")}
-            sortOptions={shareSortOptions}
-          />
-
-          <!-- Filter Tabs + Actions Row -->
-          <div class="flex items-center gap-2">
-            <!-- Filter Tabs -->
-            <div class="flex gap-1 p-1 bg-white/5 rounded-lg">
-              <button
-                class="px-3 py-1.5 rounded-md text-xs font-medium transition-all {shareFilterMode === 'all' ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white'}"
-                onclick={() => shareFilterMode = 'all'}
+          <div>
+            <h2 class="text-lg font-bold">{$t("share.selectSongsToShare")}</h2>
+            <p class="text-xs text-white/50">
+              <span class="text-[#1db954] font-semibold"
+                >{$sharedSongs.length.toLocaleString()}</span
               >
-                {$t("band.all")}
-              </button>
-              <button
-                class="px-3 py-1.5 rounded-md text-xs font-medium transition-all {shareFilterMode === 'selected' ? 'bg-[#1db954]/30 text-[#1db954]' : 'text-white/50 hover:text-white'}"
-                onclick={() => shareFilterMode = 'selected'}
-              >
-                {$t("share.selected")} ({$sharedSongs.length})
-              </button>
-              <button
-                class="px-3 py-1.5 rounded-md text-xs font-medium transition-all {shareFilterMode === 'unselected' ? 'bg-orange-500/30 text-orange-400' : 'text-white/50 hover:text-white'}"
-                onclick={() => shareFilterMode = 'unselected'}
-              >
-                {$t("share.unselected")}
-              </button>
-            </div>
-
-            <div class="flex-1"></div>
-
-            <!-- Batch Actions -->
-            <button
-              class="px-3 py-1.5 rounded-lg bg-[#1db954]/10 hover:bg-[#1db954]/20 text-xs text-[#1db954] font-medium transition-colors flex items-center gap-1.5"
-              onclick={selectVisibleSongs}
-            >
-              <Icon icon="mdi:check-all" class="w-4 h-4" />
-              {$t("share.selectShown")}
-            </button>
-            <button
-              class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white/60 hover:text-white font-medium transition-colors flex items-center gap-1.5"
-              onclick={deselectVisibleSongs}
-            >
-              <Icon icon="mdi:close" class="w-4 h-4" />
-              {$t("share.deselectShown")}
-            </button>
-            <button
-              class="px-3 py-1.5 rounded-lg bg-[#1db954]/10 hover:bg-[#1db954]/20 text-xs text-[#1db954] font-medium transition-colors"
-              onclick={selectAllSongs}
-            >
-              {$t("band.all")} {$midiFiles.length.toLocaleString()}
-            </button>
-            <button
-              class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white/60 hover:text-white font-medium transition-colors"
-              onclick={deselectAllSongs}
-            >
-              {$t("share.none")}
-            </button>
-            {#if shareSearchQuery || shareLetterFilter || shareFilterMode !== 'all'}
-              <button
-                class="px-3 py-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-xs text-orange-400 font-medium transition-colors flex items-center gap-1"
-                onclick={resetShareFilters}
-              >
-                <Icon icon="mdi:filter-off" class="w-4 h-4" />
-                {$t("band.clear")}
-              </button>
-            {/if}
+              {$t("share.ofSelected", {
+                values: { total: $midiFiles.length.toLocaleString() },
+              })}
+              {#if sharePickerSongs.length !== $midiFiles.length}
+                <span class="text-white/30 ml-2"
+                  >• {$t("share.showing", {
+                    values: { count: sharePickerSongs.length.toLocaleString() },
+                  })}</span
+                >
+              {/if}
+            </p>
           </div>
         </div>
 
-        <!-- Song Grid -->
-        <div class="flex-1 overflow-y-auto p-4 scrollbar-thin">
-          {#if sharePickerSongs.length === 0}
-            <div class="flex flex-col items-center justify-center h-full text-white/40">
-              <Icon icon="mdi:music-note-off" class="w-16 h-16 mb-4 opacity-50" />
-              <p class="text-lg font-medium mb-1">{$t("share.noSongsFound")}</p>
-              <p class="text-sm text-white/30 mb-4">{$t("share.tryAdjusting")}</p>
-              <button
-                class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sm text-white transition-colors"
-                onclick={resetShareFilters}
-              >
-                {$t("share.clearFilters")}
-              </button>
-            </div>
-          {:else}
-            <div class="grid grid-cols-3 gap-2">
-              {#each sharePickerSongs as file (file.path)}
-                {@const isSelected = $sharedSongs.includes(file.path)}
+        <!-- Done Button -->
+        <button
+          class="px-5 py-2 rounded-full bg-[#1db954] hover:bg-[#1ed760] text-white font-semibold text-sm transition-colors flex items-center gap-2"
+          onclick={() => {
+            showSharePicker = false;
+            resetShareFilters();
+          }}
+        >
+          <Icon icon="mdi:check" class="w-4 h-4" />
+          {$t("share.done")}
+        </button>
+      </div>
+
+      <!-- Main Content -->
+      <div class="flex-1 flex min-h-0">
+        <!-- Left Sidebar - Alphabet -->
+        <div
+          class="w-12 bg-[#181818] border-r border-white/5 flex flex-col py-2 overflow-y-auto scrollbar-none"
+        >
+          <button
+            class="w-full py-1.5 text-[10px] font-bold transition-all {shareLetterFilter ===
+            ''
+              ? 'text-[#1db954] bg-[#1db954]/10'
+              : 'text-white/40 hover:text-white hover:bg-white/5'}"
+            onclick={() => (shareLetterFilter = "")}
+          >
+            ALL
+          </button>
+          {#each alphabet as letter}
+            {@const count = letterCounts[letter] || 0}
+            <button
+              class="w-full py-1 text-[11px] font-medium transition-all
+              {shareLetterFilter === letter
+                ? 'text-[#1db954] bg-[#1db954]/10'
+                : count > 0
+                  ? 'text-white/40 hover:text-white hover:bg-white/5'
+                  : 'text-white/15'}"
+              onclick={() => count > 0 && (shareLetterFilter = letter)}
+              disabled={count === 0}
+              title="{count} songs"
+            >
+              {letter}
+            </button>
+          {/each}
+        </div>
+
+        <!-- Main Area -->
+        <div class="flex-1 flex flex-col min-w-0">
+          <!-- Toolbar -->
+          <div class="px-4 py-3 border-b border-white/5 space-y-3">
+            <!-- Search + Sort Row -->
+            <SearchSort
+              bind:searchQuery={shareSearchQuery}
+              bind:sortBy={shareSortBy}
+              placeholder={$t("library.searchPlaceholder")}
+              sortOptions={shareSortOptions}
+            />
+
+            <!-- Filter Tabs + Actions Row -->
+            <div class="flex items-center gap-2">
+              <!-- Filter Tabs -->
+              <div class="flex gap-1 p-1 bg-white/5 rounded-lg">
                 <button
-                  class="flex items-center gap-3 p-3 rounded-lg transition-all text-left
+                  class="px-3 py-1.5 rounded-md text-xs font-medium transition-all {shareFilterMode ===
+                  'all'
+                    ? 'bg-white/15 text-white'
+                    : 'text-white/50 hover:text-white'}"
+                  onclick={() => (shareFilterMode = "all")}
+                >
+                  {$t("band.all")}
+                </button>
+                <button
+                  class="px-3 py-1.5 rounded-md text-xs font-medium transition-all {shareFilterMode ===
+                  'selected'
+                    ? 'bg-[#1db954]/30 text-[#1db954]'
+                    : 'text-white/50 hover:text-white'}"
+                  onclick={() => (shareFilterMode = "selected")}
+                >
+                  {$t("share.selected")} ({$sharedSongs.length})
+                </button>
+                <button
+                  class="px-3 py-1.5 rounded-md text-xs font-medium transition-all {shareFilterMode ===
+                  'unselected'
+                    ? 'bg-orange-500/30 text-orange-400'
+                    : 'text-white/50 hover:text-white'}"
+                  onclick={() => (shareFilterMode = "unselected")}
+                >
+                  {$t("share.unselected")}
+                </button>
+              </div>
+
+              <div class="flex-1"></div>
+
+              <!-- Batch Actions -->
+              <button
+                class="px-3 py-1.5 rounded-lg bg-[#1db954]/10 hover:bg-[#1db954]/20 text-xs text-[#1db954] font-medium transition-colors flex items-center gap-1.5"
+                onclick={selectVisibleSongs}
+              >
+                <Icon icon="mdi:check-all" class="w-4 h-4" />
+                {$t("share.selectShown")}
+              </button>
+              <button
+                class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white/60 hover:text-white font-medium transition-colors flex items-center gap-1.5"
+                onclick={deselectVisibleSongs}
+              >
+                <Icon icon="mdi:close" class="w-4 h-4" />
+                {$t("share.deselectShown")}
+              </button>
+              <button
+                class="px-3 py-1.5 rounded-lg bg-[#1db954]/10 hover:bg-[#1db954]/20 text-xs text-[#1db954] font-medium transition-colors"
+                onclick={selectAllSongs}
+              >
+                {$t("band.all")}
+                {$midiFiles.length.toLocaleString()}
+              </button>
+              <button
+                class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white/60 hover:text-white font-medium transition-colors"
+                onclick={deselectAllSongs}
+              >
+                {$t("share.none")}
+              </button>
+              {#if shareSearchQuery || shareLetterFilter || shareFilterMode !== "all"}
+                <button
+                  class="px-3 py-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-xs text-orange-400 font-medium transition-colors flex items-center gap-1"
+                  onclick={resetShareFilters}
+                >
+                  <Icon icon="mdi:filter-off" class="w-4 h-4" />
+                  {$t("band.clear")}
+                </button>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Song Grid -->
+          <div class="flex-1 overflow-y-auto p-4 scrollbar-thin">
+            {#if sharePickerSongs.length === 0}
+              <div
+                class="flex flex-col items-center justify-center h-full text-white/40"
+              >
+                <Icon
+                  icon="mdi:music-note-off"
+                  class="w-16 h-16 mb-4 opacity-50"
+                />
+                <p class="text-lg font-medium mb-1">
+                  {$t("share.noSongsFound")}
+                </p>
+                <p class="text-sm text-white/30 mb-4">
+                  {$t("share.tryAdjusting")}
+                </p>
+                <button
+                  class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sm text-white transition-colors"
+                  onclick={resetShareFilters}
+                >
+                  {$t("share.clearFilters")}
+                </button>
+              </div>
+            {:else}
+              <div class="grid grid-cols-3 gap-2">
+                {#each sharePickerSongs as file (file.path)}
+                  {@const isSelected = $sharedSongs.includes(file.path)}
+                  <button
+                    class="flex items-center gap-3 p-3 rounded-lg transition-all text-left
                     {isSelected
                       ? 'bg-[#1db954]/20 ring-1 ring-[#1db954]/50'
-                      : 'bg-white/5 hover:bg-white/10'
-                    }"
-                  onclick={() => toggleSongShare(file.path)}
-                >
-                  <div class="w-5 h-5 rounded flex items-center justify-center flex-shrink-0
-                    {isSelected ? 'bg-[#1db954]' : 'bg-white/10 ring-1 ring-white/20'}">
-                    {#if isSelected}
-                      <Icon icon="mdi:check" class="w-3.5 h-3.5 text-white" />
-                    {/if}
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium truncate {isSelected ? 'text-[#1db954]' : 'text-white'}">{file.name}</p>
-                    <p class="text-xs text-white/40">{file.bpm || '?'} BPM</p>
-                  </div>
-                </button>
-              {/each}
-            </div>
-          {/if}
+                      : 'bg-white/5 hover:bg-white/10'}"
+                    onclick={() => toggleSongShare(file.path)}
+                  >
+                    <div
+                      class="w-5 h-5 rounded flex items-center justify-center flex-shrink-0
+                    {isSelected
+                        ? 'bg-[#1db954]'
+                        : 'bg-white/10 ring-1 ring-white/20'}"
+                    >
+                      {#if isSelected}
+                        <Icon icon="mdi:check" class="w-3.5 h-3.5 text-white" />
+                      {/if}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p
+                        class="text-sm font-medium truncate {isSelected
+                          ? 'text-[#1db954]'
+                          : 'text-white'}"
+                      >
+                        {file.name}
+                      </p>
+                      <p class="text-xs text-white/40">{file.bpm || "?"} BPM</p>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
         </div>
       </div>
-    </div>
     </div>
   </div>
 {/if}
@@ -858,7 +1090,10 @@
   >
     <button
       class="absolute inset-0 bg-black/60 backdrop-blur-sm"
-      onclick={() => { showDownloadModal = false; downloadingSong = null; }}
+      onclick={() => {
+        showDownloadModal = false;
+        downloadingSong = null;
+      }}
     ></button>
 
     <div
@@ -868,12 +1103,18 @@
       <!-- Song Preview Card -->
       <div class="p-5">
         <div class="flex items-start gap-4">
-          <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1db954]/30 to-[#1db954]/10 flex items-center justify-center flex-shrink-0">
+          <div
+            class="w-14 h-14 rounded-xl bg-gradient-to-br from-[#1db954]/30 to-[#1db954]/10 flex items-center justify-center flex-shrink-0"
+          >
             <Icon icon="mdi:music-note" class="w-7 h-7 text-[#1db954]" />
           </div>
           <div class="flex-1 min-w-0">
-            <h3 class="text-base font-bold truncate mb-1">{downloadingSong.name}</h3>
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/50">
+            <h3 class="text-base font-bold truncate mb-1">
+              {downloadingSong.name}
+            </h3>
+            <div
+              class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/50"
+            >
               <span class="flex items-center gap-1">
                 <Icon icon="mdi:account" class="w-3.5 h-3.5" />
                 {downloadingSong.peerName}
@@ -890,7 +1131,10 @@
 
         <!-- Security Note -->
         <div class="mt-4 p-3 rounded-lg bg-white/5 flex items-start gap-2">
-          <Icon icon="mdi:shield-check" class="w-4 h-4 text-[#1db954] flex-shrink-0 mt-0.5" />
+          <Icon
+            icon="mdi:shield-check"
+            class="w-4 h-4 text-[#1db954] flex-shrink-0 mt-0.5"
+          />
           <p class="text-xs text-white/50">
             {$t("share.securityNote")}
           </p>
@@ -901,7 +1145,10 @@
       <div class="flex gap-2 p-4 pt-0">
         <button
           class="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-medium text-sm transition-colors"
-          onclick={() => { showDownloadModal = false; downloadingSong = null; }}
+          onclick={() => {
+            showDownloadModal = false;
+            downloadingSong = null;
+          }}
         >
           {$t("share.cancel")}
         </button>

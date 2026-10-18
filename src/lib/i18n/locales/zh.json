@@ -40,8 +40,8 @@
   },
   "noteMode": {
     "title": "音符模式",
-    "yuelyn": "YueLyn",
-    "yuelynDesc": "YueLyn最爱的演奏模式",
+    "yuelyn": "HuwngNef",
+    "yuelynDesc": "HuwngNef最爱的演奏模式",
     "closest": "最近音",
     "closestDesc": "适合大多数歌曲",
     "wide": "宽音域",
@@ -155,7 +155,7 @@
     "about": {
       "title": "关于",
       "description": "燕云十六声 MIDI播放器",
-      "byYueLyn": "作者 YueLyn",
+      "byYueLyn": "作者 HuwngNef",
       "updateAvailable": "有新版本",
       "clickToDownload": "点击下载",
       "latestVersion": "已是最新版本"
@@ -396,7 +396,8 @@
     "gameFound": "已找到游戏",
     "on": "开",
     "off": "关",
-    "supportOnKofi": "在 Ko-fi 上支持"
+    "supportOnKofi": "在 Ko-fi 上支持",
+    "joinDiscordVDC": "加入 Discord（Vùng Đất Chill）"
   },
   "stats": {
     "title": "统计",

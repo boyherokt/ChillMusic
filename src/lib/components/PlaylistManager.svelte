@@ -10,9 +10,11 @@
     playMidi,
     isPlaying,
     isPaused,
+    queueScrollTop,
   } from "../stores/player.js";
   import SongContextMenu from "./SongContextMenu.svelte";
   import SearchSort from "./SearchSort.svelte";
+  import { searchMatch } from "../utils/stringUtils.js";
 
   // Search & Sort
   let searchQuery = "";
@@ -20,10 +22,26 @@
 
   $: sortOptions = [
     { id: "manual", label: $t("sort.manual"), icon: "mdi:drag" },
-    { id: "name-asc", label: $t("sort.nameAsc"), icon: "mdi:sort-alphabetical-ascending" },
-    { id: "name-desc", label: $t("sort.nameDesc"), icon: "mdi:sort-alphabetical-descending" },
-    { id: "duration-asc", label: $t("sort.durationAsc"), icon: "mdi:sort-numeric-ascending" },
-    { id: "duration-desc", label: $t("sort.durationDesc"), icon: "mdi:sort-numeric-descending" },
+    {
+      id: "name-asc",
+      label: $t("sort.nameAsc"),
+      icon: "mdi:sort-alphabetical-ascending",
+    },
+    {
+      id: "name-desc",
+      label: $t("sort.nameDesc"),
+      icon: "mdi:sort-alphabetical-descending",
+    },
+    {
+      id: "duration-asc",
+      label: $t("sort.durationAsc"),
+      icon: "mdi:sort-numeric-ascending",
+    },
+    {
+      id: "duration-desc",
+      label: $t("sort.durationDesc"),
+      icon: "mdi:sort-numeric-descending",
+    },
   ];
 
   // Context menu
@@ -39,17 +57,22 @@
   // Filter and sort queue
   $: filteredPlaylist = (() => {
     let result = searchQuery.trim()
-      ? $playlist.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      ? $playlist.filter((f) => searchMatch(searchQuery, f.name))
       : [...$playlist];
 
     if (sortBy !== "manual") {
       result.sort((a, b) => {
         switch (sortBy) {
-          case "name-asc": return a.name.localeCompare(b.name);
-          case "name-desc": return b.name.localeCompare(a.name);
-          case "duration-asc": return (a.duration || 0) - (b.duration || 0);
-          case "duration-desc": return (b.duration || 0) - (a.duration || 0);
-          default: return 0;
+          case "name-asc":
+            return a.name.localeCompare(b.name);
+          case "name-desc":
+            return b.name.localeCompare(a.name);
+          case "duration-asc":
+            return (a.duration || 0) - (b.duration || 0);
+          case "duration-desc":
+            return (b.duration || 0) - (a.duration || 0);
+          default:
+            return 0;
         }
       });
     }
@@ -87,15 +110,6 @@
     playlist.update((list) => {
       const newList = [...list];
       newList.splice(index, 1);
-
-      // Update currentIndex if needed
-      const $currentIndex = $currentIndex;
-      if (index < $currentIndex) {
-        currentIndex.set($currentIndex - 1);
-      } else if (index === $currentIndex && index >= newList.length) {
-        currentIndex.set(Math.max(0, newList.length - 1));
-      }
-
       return newList;
     });
   }
@@ -106,8 +120,31 @@
   }
 
   async function playFromPlaylist(index) {
-    currentIndex.set(index);
-    await playMidi($playlist[index].path);
+    const item = $playlist[index];
+    if (item) {
+      playlist.update((list) => {
+        const newList = [...list];
+        newList.splice(index, 1);
+        return newList;
+      });
+      await playMidi(item.path);
+    }
+  }
+
+  let scrollContainer;
+
+  import { onMount, tick } from "svelte";
+  onMount(async () => {
+    await tick();
+    if (scrollContainer) {
+      scrollContainer.scrollTop = $queueScrollTop || 0;
+    }
+  });
+
+  function handleScroll(e) {
+    if (e.target) {
+      queueScrollTop.set(e.target.scrollTop);
+    }
   }
 </script>
 
@@ -117,10 +154,11 @@
     <div>
       <h2 class="text-2xl font-bold mb-2">{$t("queue.title")}</h2>
       <p class="text-sm text-white/60">
-        {$playlist.length} {$t("library.songs")}
-        {#if $playlist.length > 0}
+        {$playlist.length}
+        {$t("library.songs")}
+        {#if $currentFile}
           <span class="text-[#1db954]">
-            • {$t("queue.nowPlaying")} {$currentIndex + 1} / {$playlist.length}
+            • {$t("queue.nowPlaying")}
           </span>
         {/if}
       </p>
@@ -154,6 +192,8 @@
       class="flex-1 overflow-y-auto space-y-1 dnd-zone"
       role="list"
       aria-live="polite"
+      bind:this={scrollContainer}
+      onscroll={handleScroll}
       use:dndzone={{
         items,
         flipDurationMs,
@@ -165,8 +205,10 @@
     >
       {#each items as item, index (item.id)}
         <div
-          class="group spotify-list-item flex items-center gap-4 py-2 transition-all duration-200 {sortBy === 'manual' ? 'cursor-grab active:cursor-grabbing' : ''} {$currentFile ===
-          item.path
+          class="group spotify-list-item flex items-center gap-4 py-2 transition-all duration-200 {sortBy ===
+          'manual'
+            ? 'cursor-grab active:cursor-grabbing'
+            : ''} {$currentFile === item.path
             ? 'bg-white/10 ring-1 ring-white/5'
             : 'hover:bg-white/5'}"
           role="listitem"
@@ -187,9 +229,18 @@
             {#if $currentFile === item.path && $isPlaying && !$isPaused}
               <!-- Playing indicator (animated bars) -->
               <div class="flex items-end gap-0.5 h-4">
-                <div class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-1" style="height: 60%;"></div>
-                <div class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-2" style="height: 100%;"></div>
-                <div class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-3" style="height: 80%;"></div>
+                <div
+                  class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-1"
+                  style="height: 60%;"
+                ></div>
+                <div
+                  class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-2"
+                  style="height: 100%;"
+                ></div>
+                <div
+                  class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-3"
+                  style="height: 80%;"
+                ></div>
               </div>
             {:else}
               <span
@@ -229,7 +280,13 @@
               {item.name}
             </p>
             <p class="text-xs text-white/40">
-              {item.bpm || 120} BPM • {#if (item.note_density || 0) < 3}{$t("library.easy")}{:else if (item.note_density || 0) < 6}{$t("library.medium")}{:else if (item.note_density || 0) < 10}{$t("library.hard")}{:else}{$t("library.expert")}{/if}
+              {item.bpm || 120} BPM • {#if (item.note_density || 0) < 3}{$t(
+                  "library.easy",
+                )}{:else if (item.note_density || 0) < 6}{$t(
+                  "library.medium",
+                )}{:else if (item.note_density || 0) < 10}{$t(
+                  "library.hard",
+                )}{:else}{$t("library.expert")}{/if}
             </p>
           </div>
 
@@ -264,9 +321,13 @@
       </div>
     {/if}
   {:else if $playlist.length > 0 && searchQuery}
-    <div class="flex-1 flex flex-col items-center justify-center text-white/40 py-16">
+    <div
+      class="flex-1 flex flex-col items-center justify-center text-white/40 py-16"
+    >
       <Icon icon="mdi:magnify" class="w-10 h-10 opacity-50 mb-4" />
-      <p class="text-sm">{$t("common.noResults", { values: { query: searchQuery } })}</p>
+      <p class="text-sm">
+        {$t("common.noResults", { values: { query: searchQuery } })}
+      </p>
     </div>
   {:else}
     <div
@@ -277,15 +338,17 @@
       >
         <Icon icon="mdi:playlist-music" class="w-10 h-10 opacity-50" />
       </div>
-      <p class="text-lg font-semibold mb-2 text-white/60">{$t("queue.emptyQueue")}</p>
+      <p class="text-lg font-semibold mb-2 text-white/60">
+        {$t("queue.emptyQueue")}
+      </p>
       <p class="text-sm text-white/40">{$t("queue.addFromLibrary")}</p>
     </div>
   {/if}
 </div>
 
-<svelte:window onclick={() => contextMenu = null} />
+<svelte:window onclick={() => (contextMenu = null)} />
 
-<SongContextMenu {contextMenu} onClose={() => contextMenu = null} />
+<SongContextMenu {contextMenu} onClose={() => (contextMenu = null)} />
 
 <style>
   .dnd-zone {

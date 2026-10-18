@@ -190,15 +190,18 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 #[cfg(target_os = "windows")]
-const TARGET_WINDOW_KEYWORDS: [&str; 8] = [
+const TARGET_WINDOW_KEYWORDS: [&str; 11] = [
     "where winds meet",
     "wwm",
     "wwm.exe",
+    "yysls",
+    "yysls.exe",
     "연운",
     "燕云十六声",
     "geforce now",
     "geforcenow",
     "nvidia geforce",
+    "naraka",
 ];
 
 // Custom window keywords added by user
@@ -817,7 +820,7 @@ pub fn focus_black_desert_window() -> Result<(), String> {
             std::thread::sleep(std::time::Duration::from_millis(100));
             Ok(())
         } else {
-            Err("Game window not found (WWM or GeForce Now)".into())
+            Err("Game window not found (Where Winds Meet / yysls, Naraka, or GeForce Now)".into())
         }
     }
 }

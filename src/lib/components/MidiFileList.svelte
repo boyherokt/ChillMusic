@@ -1,9 +1,9 @@
 <script>
   import Icon from "@iconify/svelte";
   import { fade, fly } from "svelte/transition";
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { invoke } from "../tauri/core-proxy.js";
+  import { invoke, isTauri } from "../tauri/core-proxy.js";
   import { open, save } from "@tauri-apps/plugin-dialog";
   import { t } from "svelte-i18n";
   import {
@@ -27,13 +27,21 @@
     loadMoreFiles,
     loadAllFiles,
     playAllLibrary,
+    playFromContext,
     libraryPlayMode,
     loadMidiFiles,
     isImportingFiles,
+    libraryScrollTop,
+    librarySortBy,
   } from "../stores/player.js";
-  import { bandSongSelectMode, selectBandSong, cancelBandSongSelect } from "../stores/band.js";
+  import {
+    bandSongSelectMode,
+    selectBandSong,
+    cancelBandSongSelect,
+  } from "../stores/band.js";
   import SongContextMenu from "./SongContextMenu.svelte";
   import SearchSort from "./SearchSort.svelte";
+  import { searchMatch } from "../utils/stringUtils.js";
 
   let searchQuery = "";
   let showPlaylistMenu = null;
@@ -43,7 +51,6 @@
   let unlistenDrop = null;
   let unlistenHover = null;
   let unlistenCancel = null;
-  let sortBy = "name-asc";
 
   // Import modal
   let showImportModal = false;
@@ -89,20 +96,29 @@
   function handleScroll(e) {
     const { scrollTop: st, scrollHeight, clientHeight } = e.target;
     scrollTop = st;
+    libraryScrollTop.set(st); // Persist scroll position across mounts
+
     showTopMask = st > 10;
     showBottomMask = st + clientHeight < scrollHeight - 10;
 
     // Update visible range for virtual scrolling
     const startIndex = Math.max(0, Math.floor(st / ITEM_HEIGHT) - BUFFER_ITEMS);
-    const visibleCount = Math.ceil(clientHeight / ITEM_HEIGHT) + BUFFER_ITEMS * 2;
+    const visibleCount =
+      Math.ceil(clientHeight / ITEM_HEIGHT) + BUFFER_ITEMS * 2;
     visibleStartIndex = startIndex;
     visibleEndIndex = startIndex + visibleCount;
   }
 
   // Get visible slice of files for virtual scrolling
-  $: visibleFiles = filteredFiles.slice(visibleStartIndex, Math.min(visibleEndIndex, filteredFiles.length));
+  $: visibleFiles = filteredFiles.slice(
+    visibleStartIndex,
+    Math.min(visibleEndIndex, filteredFiles.length),
+  );
   $: topPadding = visibleStartIndex * ITEM_HEIGHT;
-  $: bottomPadding = Math.max(0, (filteredFiles.length - visibleEndIndex) * ITEM_HEIGHT);
+  $: bottomPadding = Math.max(
+    0,
+    (filteredFiles.length - visibleEndIndex) * ITEM_HEIGHT,
+  );
 
   // Reset visible range when container height changes or search changes
   $: if (scrollContainer && filteredFiles.length > 0) {
@@ -110,46 +126,59 @@
     const clientHeight = scrollContainer?.clientHeight || 500;
     const minVisible = Math.ceil(clientHeight / ITEM_HEIGHT) + BUFFER_ITEMS * 2;
     if (visibleEndIndex - visibleStartIndex < minVisible) {
-      visibleEndIndex = Math.min(visibleStartIndex + minVisible, filteredFiles.length);
+      visibleEndIndex = Math.min(
+        visibleStartIndex + minVisible,
+        filteredFiles.length,
+      );
     }
   }
 
   onMount(async () => {
-    // Check initial scroll state and initialize virtual scroll
-    setTimeout(() => {
-      if (scrollContainer) {
-        const { scrollTop: st, scrollHeight, clientHeight } = scrollContainer;
-        showBottomMask = scrollHeight > clientHeight;
+    // Wait for DOM to render list items
+    await tick();
 
-        // Initialize visible range
-        const startIndex = Math.max(0, Math.floor(st / ITEM_HEIGHT) - BUFFER_ITEMS);
-        const visibleCount = Math.ceil(clientHeight / ITEM_HEIGHT) + BUFFER_ITEMS * 2;
-        visibleStartIndex = startIndex;
-        visibleEndIndex = Math.max(100, startIndex + visibleCount); // At least 100 items initially
-      }
-    }, 100);
+    // Restore initial scroll state
+    if (scrollContainer) {
+      scrollContainer.scrollTop = $libraryScrollTop || 0;
+      scrollTop = $libraryScrollTop || 0;
+
+      const { scrollHeight, clientHeight } = scrollContainer;
+      showBottomMask = scrollHeight > clientHeight;
+
+      // Initialize visible range based on restored scroll
+      const startIndex = Math.max(
+        0,
+        Math.floor(scrollTop / ITEM_HEIGHT) - BUFFER_ITEMS,
+      );
+      const visibleCount =
+        Math.ceil(clientHeight / ITEM_HEIGHT) + BUFFER_ITEMS * 2;
+      visibleStartIndex = startIndex;
+      visibleEndIndex = Math.max(100, startIndex + visibleCount); // At least 100 items initially
+    }
 
     // Listen for Tauri drag-drop events
-    unlistenDrop = await listen("tauri://drag-drop", async (event) => {
-      isDragOver = false;
-      const paths = event.payload.paths || [];
-      const midFiles = paths.filter(p => p.toLowerCase().endsWith('.mid'));
+    if (isTauri) {
+      unlistenDrop = await listen("tauri://drag-drop", async (event) => {
+        isDragOver = false;
+        const paths = event.payload.paths || [];
+        const midFiles = paths.filter((p) => p.toLowerCase().endsWith(".mid"));
 
-      if (midFiles.length === 0) {
-        showToast("Please drop .mid files only", "error");
-        return;
-      }
+        if (midFiles.length === 0) {
+          showToast("Please drop .mid files only", "error");
+          return;
+        }
 
-      await importFiles(midFiles);
-    });
+        await importFiles(midFiles);
+      });
 
-    unlistenHover = await listen("tauri://drag-enter", () => {
-      isDragOver = true;
-    });
+      unlistenHover = await listen("tauri://drag-enter", () => {
+        isDragOver = true;
+      });
 
-    unlistenCancel = await listen("tauri://drag-leave", () => {
-      isDragOver = false;
-    });
+      unlistenCancel = await listen("tauri://drag-leave", () => {
+        isDragOver = false;
+      });
+    }
   });
 
   onDestroy(() => {
@@ -174,7 +203,9 @@
         // File already exists - find it in library and add to list
         skipped++;
         const fileName = filePath.split(/[/\\]/).pop();
-        const existingFile = $midiFiles.find(f => f.name === fileName.replace(/\.mid$/i, ''));
+        const existingFile = $midiFiles.find(
+          (f) => f.name === fileName.replace(/\.mid$/i, ""),
+        );
         if (existingFile) {
           importedFilesList.push(existingFile);
         }
@@ -188,13 +219,16 @@
     await loadMidiFiles();
 
     if (imported > 0 && skipped === 0 && failed === 0) {
-      showToast(`Imported ${imported} file${imported > 1 ? 's' : ''}`, "success");
+      showToast(
+        `Imported ${imported} file${imported > 1 ? "s" : ""}`,
+        "success",
+      );
     } else if (imported > 0 || skipped > 0) {
       const parts = [];
       if (imported > 0) parts.push(`${imported} imported`);
       if (skipped > 0) parts.push(`${skipped} already exist`);
       if (failed > 0) parts.push(`${failed} failed`);
-      showToast(parts.join(', '), imported > 0 ? "success" : "info");
+      showToast(parts.join(", "), imported > 0 ? "success" : "info");
     } else {
       showToast("Failed to import files", "error");
     }
@@ -202,7 +236,8 @@
     // Show playlist prompt if multiple files were selected (imported + skipped)
     if (importedFilesList.length > 1) {
       lastImportedFiles = importedFilesList;
-      newPlaylistName = sourceName || `Imported ${new Date().toLocaleDateString()}`;
+      newPlaylistName =
+        sourceName || `Imported ${new Date().toLocaleDateString()}`;
       showPlaylistPrompt = true;
     }
   }
@@ -261,16 +296,20 @@
   async function importFromZip(zipPath) {
     isImportingFiles.set(true);
     try {
-      const imported = await invoke('import_from_zip', { zipPath });
+      const imported = await invoke("import_from_zip", { zipPath });
       await loadMidiFiles();
       isImportingFiles.set(false);
 
       if (imported.length > 0) {
-        showToast(`Imported ${imported.length} file${imported.length > 1 ? 's' : ''} from zip`, "success");
+        showToast(
+          `Imported ${imported.length} file${imported.length > 1 ? "s" : ""} from zip`,
+          "success",
+        );
         // Show playlist prompt
         if (imported.length > 1) {
           lastImportedFiles = imported;
-          const zipName = zipPath.split(/[\\/]/).pop()?.replace('.zip', '') || 'Imported';
+          const zipName =
+            zipPath.split(/[\\/]/).pop()?.replace(".zip", "") || "Imported";
           newPlaylistName = zipName;
           showPlaylistPrompt = true;
         }
@@ -288,7 +327,7 @@
     isImportingFiles.set(true);
     try {
       // Get list of midi files in folder
-      const midiPaths = await invoke('list_midi_in_folder', { folderPath });
+      const midiPaths = await invoke("list_midi_in_folder", { folderPath });
 
       if (midiPaths.length === 0) {
         isImportingFiles.set(false);
@@ -297,7 +336,7 @@
       }
 
       // Import using existing function
-      const folderName = folderPath.split(/[\\/]/).pop() || 'Imported';
+      const folderName = folderPath.split(/[\\/]/).pop() || "Imported";
       await importFiles(midiPaths, folderName);
     } catch (error) {
       isImportingFiles.set(false);
@@ -310,7 +349,12 @@
     if (lastImportedFiles.length > 0 && newPlaylistName.trim()) {
       const id = createPlaylist(newPlaylistName.trim());
       addManyToSavedPlaylist(id, lastImportedFiles);
-      showToast($t("library.createdPlaylist", { values: { name: newPlaylistName.trim() } }), "success");
+      showToast(
+        $t("library.createdPlaylist", {
+          values: { name: newPlaylistName.trim() },
+        }),
+        "success",
+      );
     }
     showPlaylistPrompt = false;
     lastImportedFiles = [];
@@ -332,14 +376,14 @@
     const url = urlInput.trim();
 
     // Basic URL validation
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
       showToast("Invalid URL format", "error");
       return;
     }
 
     isDownloading = true;
     try {
-      const result = await invoke('download_midi_from_url', { url });
+      const result = await invoke("download_midi_from_url", { url });
       showImportModal = false;
       urlInput = "";
       showToast(`Imported "${result.name}"`, "success");
@@ -357,7 +401,10 @@
 
     try {
       isExporting = true;
-      exportProgress = { current: 0, total: $totalMidiCount || $midiFiles.length };
+      exportProgress = {
+        current: 0,
+        total: $totalMidiCount || $midiFiles.length,
+      };
 
       const exportPath = await save({
         title: "Export Library",
@@ -373,7 +420,12 @@
 
         const count = await invoke("export_library", { exportPath });
         unlisten();
-        showToast($t("library.addedSongsToQueue", { values: { count: count.toLocaleString() } }) + " (exported)", "success");
+        showToast(
+          $t("library.addedSongsToQueue", {
+            values: { count: count.toLocaleString() },
+          }) + " (exported)",
+          "success",
+        );
       }
     } catch (error) {
       console.error("Failed to export library:", error);
@@ -399,14 +451,16 @@
       return;
     }
 
-    // Add to playlist if not already there
-    playlist.update((list) => {
-      if (!list.find((f) => f.path === file.path)) {
-        return [...list, file];
-      }
-      return list;
+    const fileIndex = filteredFiles.findIndex(
+      (f) => f.hash === file.hash || f.path === file.path
+    );
+    await playFromContext({
+      source: "library",
+      name: $t("library.title") || "Library",
+      tracks: filteredFiles,
+      index: fileIndex >= 0 ? fileIndex : 0,
+      file,
     });
-    await playMidi(file.path);
   }
 
   function addToQueue(file) {
@@ -417,17 +471,24 @@
       }
       return list;
     });
-    showToast(added ? $t("library.addedToQueue") : $t("library.alreadyInQueue"), added ? "success" : "info");
+    showToast(
+      added ? $t("library.addedToQueue") : $t("library.alreadyInQueue"),
+      added ? "success" : "info",
+    );
   }
 
   function handleAddToPlaylist(playlistId, file) {
-    const pl = $savedPlaylists.find(p => p.id === playlistId);
-    const alreadyExists = pl?.tracks.some(t => t.path === file.path);
+    const pl = $savedPlaylists.find((p) => p.id === playlistId);
+    const alreadyExists = pl?.tracks.some((t) => t.path === file.path);
     addToSavedPlaylist(playlistId, file);
     showPlaylistMenu = null;
     showToast(
-      alreadyExists ? $t("library.alreadyInQueue") : $t("library.addedSongsToPlaylist", { values: { count: 1, name: pl?.name } }),
-      alreadyExists ? "info" : "success"
+      alreadyExists
+        ? $t("library.alreadyInQueue")
+        : $t("library.addedSongsToPlaylist", {
+            values: { count: 1, name: pl?.name },
+          }),
+      alreadyExists ? "info" : "success",
     );
   }
 
@@ -435,13 +496,15 @@
     const wasFavorite = $favorites.some((f) => f.hash === file.hash);
     toggleFavorite(file);
     showToast(
-      wasFavorite ? $t("library.removedFromFavorites") : $t("library.addedToFavorites"),
-      wasFavorite ? "info" : "success"
+      wasFavorite
+        ? $t("library.removedFromFavorites")
+        : $t("library.addedToFavorites"),
+      wasFavorite ? "info" : "success",
     );
   }
 
   // Reactive favorite lookup using a Set for O(1) performance (by hash for rename support)
-  $: favoriteHashes = new Set($favorites.map(f => f.hash));
+  $: favoriteHashes = new Set($favorites.map((f) => f.hash));
 
   // Check if a file is invalid/broken (no duration means parsing failed)
   function isInvalidFile(file) {
@@ -449,9 +512,9 @@
   }
 
   $: filteredFiles = $midiFiles
-    .filter((file) => file.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter((file) => searchMatch(searchQuery, file.name))
     .sort((a, b) => {
-      switch (sortBy) {
+      switch ($librarySortBy) {
         case "name-asc":
           return a.name.localeCompare(b.name);
         case "name-desc":
@@ -468,6 +531,10 @@
           return (a.note_density || 0) - (b.note_density || 0);
         case "density-desc":
           return (b.note_density || 0) - (a.note_density || 0);
+        case "date-asc":
+          return (a.mtime || 0) - (b.mtime || 0);
+        case "date-desc":
+          return (b.mtime || 0) - (a.mtime || 0);
         default:
           return 0;
       }
@@ -525,33 +592,39 @@
 
   function selectAll() {
     selectedFiles = new Set(
-      filteredFiles
-        .filter(f => !isInvalidFile(f))
-        .map(f => f.hash)
+      filteredFiles.filter((f) => !isInvalidFile(f)).map((f) => f.hash),
     );
   }
 
   function getSelectedFileObjects() {
-    return filteredFiles.filter(f => selectedFiles.has(f.hash));
+    return filteredFiles.filter((f) => selectedFiles.has(f.hash));
   }
 
   function addSelectedToQueue() {
     const files = getSelectedFileObjects();
     playlist.update((list) => {
-      const existingPaths = new Set(list.map(f => f.path));
-      const newFiles = files.filter(f => !existingPaths.has(f.path));
+      const existingPaths = new Set(list.map((f) => f.path));
+      const newFiles = files.filter((f) => !existingPaths.has(f.path));
       return [...list, ...newFiles];
     });
-    showToast($t("library.addedSongsToQueue", { values: { count: files.length } }), "success");
+    showToast(
+      $t("library.addedSongsToQueue", { values: { count: files.length } }),
+      "success",
+    );
     clearSelection();
   }
 
   function addSelectedToPlaylist(playlistId) {
     const files = getSelectedFileObjects();
-    const pl = $savedPlaylists.find(p => p.id === playlistId);
+    const pl = $savedPlaylists.find((p) => p.id === playlistId);
     addManyToSavedPlaylist(playlistId, files);
     showBulkPlaylistMenu = false;
-    showToast($t("library.addedSongsToPlaylist", { values: { count: files.length, name: pl?.name } }), "success");
+    showToast(
+      $t("library.addedSongsToPlaylist", {
+        values: { count: files.length, name: pl?.name },
+      }),
+      "success",
+    );
     clearSelection();
   }
 
@@ -566,7 +639,12 @@
     const files = getSelectedFileObjects();
     const id = createPlaylist(createPlaylistName.trim());
     addManyToSavedPlaylist(id, files);
-    showToast($t("library.createdPlaylistWithSongs", { values: { name: createPlaylistName.trim(), count: files.length } }), "success");
+    showToast(
+      $t("library.createdPlaylistWithSongs", {
+        values: { name: createPlaylistName.trim(), count: files.length },
+      }),
+      "success",
+    );
     showCreatePlaylistModal = false;
     createPlaylistName = "";
     clearSelection();
@@ -585,16 +663,49 @@
 
   // Make sortOptions reactive so labels update on language change
   $: sortOptions = [
-    { id: "name-asc", label: $t("sort.nameAsc"), icon: "mdi:sort-alphabetical-ascending" },
-    { id: "name-desc", label: $t("sort.nameDesc"), icon: "mdi:sort-alphabetical-descending" },
-    { id: "duration-asc", label: $t("sort.durationAsc"), icon: "mdi:sort-numeric-ascending" },
-    { id: "duration-desc", label: $t("sort.durationDesc"), icon: "mdi:sort-numeric-descending" },
+    {
+      id: "name-asc",
+      label: $t("sort.nameAsc"),
+      icon: "mdi:sort-alphabetical-ascending",
+    },
+    {
+      id: "name-desc",
+      label: $t("sort.nameDesc"),
+      icon: "mdi:sort-alphabetical-descending",
+    },
+    {
+      id: "duration-asc",
+      label: $t("sort.durationAsc"),
+      icon: "mdi:sort-numeric-ascending",
+    },
+    {
+      id: "duration-desc",
+      label: $t("sort.durationDesc"),
+      icon: "mdi:sort-numeric-descending",
+    },
     { id: "bpm-asc", label: $t("sort.bpmAsc"), icon: "mdi:speedometer-slow" },
     { id: "bpm-desc", label: $t("sort.bpmDesc"), icon: "mdi:speedometer" },
-    { id: "density-asc", label: $t("sort.difficultyAsc"), icon: "mdi:music-note" },
-    { id: "density-desc", label: $t("sort.difficultyDesc"), icon: "mdi:music-note-plus" },
+    {
+      id: "density-asc",
+      label: $t("sort.difficultyAsc"),
+      icon: "mdi:music-note",
+    },
+    {
+      id: "density-desc",
+      label: $t("sort.difficultyDesc"),
+      icon: "mdi:music-note-plus",
+    },
+    {
+      id: "date-desc",
+      label: $t("sort.dateDesc"),
+      icon: "mdi:calendar-clock",
+    },
+    {
+      id: "date-asc",
+      label: $t("sort.dateAsc"),
+      icon: "mdi:calendar",
+    },
   ];
-
 </script>
 
 <div class="h-full flex flex-col relative">
@@ -605,13 +716,17 @@
       transition:fade={{ duration: 150 }}
     >
       <div class="text-center">
-        <Icon icon="mdi:file-music" class="w-16 h-16 text-[#1db954] mx-auto mb-4" />
-        <p class="text-lg font-semibold text-[#1db954]">{$t("library.dropFilesHere")}</p>
+        <Icon
+          icon="mdi:file-music"
+          class="w-16 h-16 text-[#1db954] mx-auto mb-4"
+        />
+        <p class="text-lg font-semibold text-[#1db954]">
+          {$t("library.dropFilesHere")}
+        </p>
         <p class="text-sm text-white/60">{$t("nav.library")}</p>
       </div>
     </div>
   {/if}
-
 
   <!-- Band Selection Mode Banner -->
   {#if $bandSongSelectMode}
@@ -641,7 +756,12 @@
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1db954] hover:bg-[#1ed760] text-white text-sm font-medium transition-all"
             onclick={() => {
               playAllLibrary(filteredFiles, 0, false);
-              showToast($t("library.playingSongs", { values: { count: filteredFiles.length.toLocaleString() } }), "success");
+              showToast(
+                $t("library.playingSongs", {
+                  values: { count: filteredFiles.length.toLocaleString() },
+                }),
+                "success",
+              );
             }}
             title={$t("library.playAll")}
           >
@@ -652,7 +772,12 @@
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-sm font-medium transition-all"
             onclick={() => {
               playAllLibrary(filteredFiles, 0, true);
-              showToast($t("library.shufflingSongs", { values: { count: filteredFiles.length.toLocaleString() } }), "success");
+              showToast(
+                $t("library.shufflingSongs", {
+                  values: { count: filteredFiles.length.toLocaleString() },
+                }),
+                "success",
+              );
             }}
             title={$t("library.shuffleAll")}
           >
@@ -669,7 +794,9 @@
           >
             {#if isExporting}
               <Icon icon="mdi:loading" class="w-4 h-4 animate-spin" />
-              {exportProgress.total > 0 ? `${Math.round(exportProgress.current / exportProgress.total * 100)}%` : $t("playlists.export")}
+              {exportProgress.total > 0
+                ? `${Math.round((exportProgress.current / exportProgress.total) * 100)}%`
+                : $t("playlists.export")}
             {:else}
               <Icon icon="mdi:export" class="w-4 h-4" />
               {$t("playlists.export")}
@@ -678,7 +805,7 @@
         {/if}
         <button
           class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-sm font-medium transition-all"
-          onclick={() => showImportModal = true}
+          onclick={() => (showImportModal = true)}
           title={$t("playlists.import")}
         >
           <Icon icon="mdi:plus" class="w-4 h-4" />
@@ -689,15 +816,24 @@
     <p class="text-sm text-white/60 mb-4 flex items-center gap-2">
       {#if $isLoadingMidi}
         <span class="flex items-center gap-2">
-          <Icon icon="mdi:loading" class="w-4 h-4 animate-spin text-[#1db954]" />
+          <Icon
+            icon="mdi:loading"
+            class="w-4 h-4 animate-spin text-[#1db954]"
+          />
           {#if $midiLoadProgress.total > 0}
-            {$t("common.loading")} {$midiLoadProgress.loaded.toLocaleString()} / {$midiLoadProgress.total.toLocaleString()}
+            {$t("common.loading")}
+            {$midiLoadProgress.loaded.toLocaleString()} / {$midiLoadProgress.total.toLocaleString()}
           {:else}
             {$t("common.loading")}
           {/if}
         </span>
       {:else}
-        <span>{filteredFiles.length} {$t("library.of")} {$midiFiles.length} {$t("library.songs")}</span>
+        <span
+          >{filteredFiles.length}
+          {$t("library.of")}
+          {$midiFiles.length}
+          {$t("library.songs")}</span
+        >
         <span class="text-white/30">•</span>
         <span class="text-xs text-white/30 flex items-center gap-1">
           <Icon icon="mdi:mouse" class="w-3 h-3" />
@@ -709,7 +845,7 @@
     <!-- Search Input with Sort -->
     <SearchSort
       bind:searchQuery
-      bind:sortBy
+      bind:sortBy={$librarySortBy}
       placeholder={$t("library.searchPlaceholder")}
       {sortOptions}
     />
@@ -722,13 +858,20 @@
       transition:fly={{ y: -10, duration: 200 }}
     >
       <div class="flex items-center gap-2 flex-1">
-        <Icon icon="mdi:checkbox-multiple-marked" class="w-5 h-5 text-[#1db954]" />
-        <span class="text-sm font-medium">{selectedFiles.size} {$t("library.selected")}</span>
+        <Icon
+          icon="mdi:checkbox-multiple-marked"
+          class="w-5 h-5 text-[#1db954]"
+        />
+        <span class="text-sm font-medium"
+          >{selectedFiles.size} {$t("library.selected")}</span
+        >
         <button
           class="text-xs text-white/50 hover:text-white transition-colors underline"
           onclick={selectAll}
         >
-          {$t("library.selectAll")} ({filteredFiles.filter(f => !isInvalidFile(f)).length})
+          {$t("library.selectAll")} ({filteredFiles.filter(
+            (f) => !isInvalidFile(f),
+          ).length})
         </button>
       </div>
       <div class="flex items-center gap-2">
@@ -779,7 +922,10 @@
                       class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2 truncate"
                       onclick={() => addSelectedToPlaylist(pl.id)}
                     >
-                      <Icon icon="mdi:playlist-music-outline" class="w-4 h-4 flex-shrink-0" />
+                      <Icon
+                        icon="mdi:playlist-music-outline"
+                        class="w-4 h-4 flex-shrink-0"
+                      />
                       <span class="truncate">{pl.name}</span>
                     </button>
                   {/each}
@@ -803,250 +949,301 @@
 
   <!-- Song List (Scrollable) - show if we have files, even while loading more -->
   {#if $midiFiles.length > 0}
-  <div
-    bind:this={scrollContainer}
-    onscroll={handleScroll}
-    class="flex-1 overflow-y-auto pr-2 -mx-1 px-1 {showTopMask && showBottomMask ? 'scroll-mask-both' : showTopMask ? 'scroll-mask-top' : showBottomMask ? 'scroll-mask-bottom' : ''}"
-  >
-    <!-- Virtual scroll padding top -->
-    <div style="height: {topPadding}px"></div>
+    <div
+      bind:this={scrollContainer}
+      onscroll={handleScroll}
+      class="flex-1 overflow-y-auto pr-2 -mx-1 px-1 {showTopMask &&
+      showBottomMask
+        ? 'scroll-mask-both'
+        : showTopMask
+          ? 'scroll-mask-top'
+          : showBottomMask
+            ? 'scroll-mask-bottom'
+            : ''}"
+    >
+      <!-- Virtual scroll padding top -->
+      <div style="height: {topPadding}px"></div>
 
-    {#each visibleFiles as file, i (`${file.path}-${i}`)}
-      {@const invalid = isInvalidFile(file)}
-      {@const index = visibleStartIndex + i}
-      {@const isSelected = selectedFiles.has(file.hash)}
-      <div
-        class="group spotify-list-item flex items-center gap-4 py-2 rounded-lg transition-colors duration-150 {isSelected
-          ? 'bg-[#1db954]/20 ring-1 ring-[#1db954]/30'
-          : $currentFile === file.path
-            ? 'bg-white/10 ring-1 ring-white/5'
-            : 'hover:bg-white/5'} {invalid ? 'opacity-60' : ''}"
-        style="height: {ITEM_HEIGHT}px; margin-bottom: 2px;"
-        title={invalid ? $t("library.invalidFile") : $t("library.selectHint")}
-        oncontextmenu={(e) => handleContextMenu(e, file)}
-        onclick={(e) => handleFileClick(e, file, index)}
-      >
-        <!-- Number / Checkbox / Play Button / Playing Indicator -->
-        <div class="w-8 flex items-center justify-center flex-shrink-0">
-          {#if isSelected}
-            <!-- Checkbox for selected state -->
-            <button
-              class="flex items-center justify-center w-6 h-6 rounded bg-[#1db954] transition-transform hover:scale-110"
-              onclick={(e) => {
-                e.stopPropagation();
-                selectedFiles = new Set(selectedFiles);
-                selectedFiles.delete(file.hash);
-              }}
-              title={$t("library.deselect")}
-            >
-              <Icon icon="mdi:check" class="w-4 h-4 text-black" />
-            </button>
-          {:else if selectedFiles.size > 0 && !invalid}
-            <!-- Empty checkbox when in selection mode -->
-            <button
-              class="flex items-center justify-center w-6 h-6 rounded border-2 border-white/30 hover:border-[#1db954] transition-colors group-hover:border-white/50"
-              onclick={(e) => {
-                e.stopPropagation();
-                selectedFiles = new Set(selectedFiles);
-                selectedFiles.add(file.hash);
-              }}
-              title={$t("library.select")}
-            >
-            </button>
-          {:else if $currentFile === file.path && $isPlaying && !$isPaused}
-            <!-- Playing indicator (animated bars) -->
-            <div class="flex items-end gap-0.5 h-4">
-                    <div class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-1" style="height: 60%;"></div>
-                    <div class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-2" style="height: 100%;"></div>
-                    <div class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-3" style="height: 80%;"></div>
-            </div>
-          {:else}
-            <span
-              class="text-sm text-white/40 {$currentFile === file.path
-                ? 'text-[#1db954] font-semibold'
-                : ''} group-hover:hidden">{index + 1}</span
-            >
-            {#if !invalid}
+      {#each visibleFiles as file, i (`${file.path}-${i}`)}
+        {@const invalid = isInvalidFile(file)}
+        {@const index = visibleStartIndex + i}
+        {@const isSelected = selectedFiles.has(file.hash)}
+        <div
+          class="group spotify-list-item flex items-center gap-4 py-2 rounded-lg transition-colors duration-150 {isSelected
+            ? 'bg-[#1db954]/20 ring-1 ring-[#1db954]/30'
+            : $currentFile === file.path
+              ? 'bg-white/10 ring-1 ring-white/5'
+              : 'hover:bg-white/5'} {invalid ? 'opacity-60' : ''}"
+          style="height: {ITEM_HEIGHT}px; margin-bottom: 2px;"
+          title={invalid ? $t("library.invalidFile") : $t("library.selectHint")}
+          oncontextmenu={(e) => handleContextMenu(e, file)}
+          onclick={(e) => handleFileClick(e, file, index)}
+        >
+          <!-- Number / Checkbox / Play Button / Playing Indicator -->
+          <div class="w-8 flex items-center justify-center flex-shrink-0">
+            {#if isSelected}
+              <!-- Checkbox for selected state -->
               <button
-                class="hidden group-hover:flex items-center justify-center w-7 h-7 rounded-full bg-[#1db954] hover:scale-110 transition-transform shadow-lg"
+                class="flex items-center justify-center w-6 h-6 rounded bg-[#1db954] transition-transform hover:scale-110"
                 onclick={(e) => {
                   e.stopPropagation();
-                  handlePlay(file);
+                  selectedFiles = new Set(selectedFiles);
+                  selectedFiles.delete(file.hash);
                 }}
-                title={$bandSongSelectMode ? $t("library.selectForBand") : $t("player.play")}
+                title={$t("library.deselect")}
               >
-                <Icon icon={$bandSongSelectMode ? "mdi:check" : "mdi:play"} class="w-4 h-4 text-black" />
+                <Icon icon="mdi:check" class="w-4 h-4 text-black" />
               </button>
+            {:else if selectedFiles.size > 0 && !invalid}
+              <!-- Empty checkbox when in selection mode -->
+              <button
+                class="flex items-center justify-center w-6 h-6 rounded border-2 border-white/30 hover:border-[#1db954] transition-colors group-hover:border-white/50"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  selectedFiles = new Set(selectedFiles);
+                  selectedFiles.add(file.hash);
+                }}
+                title={$t("library.select")}
+              >
+              </button>
+            {:else if $currentFile === file.path && $isPlaying && !$isPaused}
+              <!-- Playing indicator (animated bars) -->
+              <div class="flex items-end gap-0.5 h-4">
+                <div
+                  class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-1"
+                  style="height: 60%;"
+                ></div>
+                <div
+                  class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-2"
+                  style="height: 100%;"
+                ></div>
+                <div
+                  class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-3"
+                  style="height: 80%;"
+                ></div>
+              </div>
+            {:else}
+              <span
+                class="text-sm text-white/40 {$currentFile === file.path
+                  ? 'text-[#1db954] font-semibold'
+                  : ''} group-hover:hidden">{index + 1}</span
+              >
+              {#if !invalid}
+                <button
+                  class="hidden group-hover:flex items-center justify-center w-7 h-7 rounded-full bg-[#1db954] hover:scale-110 transition-transform shadow-lg"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    handlePlay(file);
+                  }}
+                  title={$bandSongSelectMode
+                    ? $t("library.selectForBand")
+                    : $t("player.play")}
+                >
+                  <Icon
+                    icon={$bandSongSelectMode ? "mdi:check" : "mdi:play"}
+                    class="w-4 h-4 text-black"
+                  />
+                </button>
+              {/if}
             {/if}
-          {/if}
-        </div>
+          </div>
 
-        <!-- Song Info -->
-        <div
-          class="flex-1 min-w-0 {invalid ? 'cursor-not-allowed' : ''}"
-          role={invalid ? undefined : "button"}
-          tabindex={invalid ? undefined : 0}
-          onclick={(e) => {
-            if (invalid) return;
-            // Don't play if Ctrl/Shift held (selection mode) or if selection exists
-            if (e.ctrlKey || e.metaKey || e.shiftKey) return;
-            if (selectedFiles.size > 0 && !isSelected) return;
-            if (selectedFiles.size === 0) {
-              handlePlay(file);
-            }
-          }}
-          onkeydown={(event) => {
-            if (!invalid && (event.key === "Enter" || event.key === " ")) {
-              event.preventDefault();
+          <!-- Song Info -->
+          <div
+            class="flex-1 min-w-0 {invalid ? 'cursor-not-allowed' : ''}"
+            role={invalid ? undefined : "button"}
+            tabindex={invalid ? undefined : 0}
+            onclick={(e) => {
+              if (invalid) return;
+              // Don't play if Ctrl/Shift held (selection mode) or if selection exists
+              if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+              if (selectedFiles.size > 0 && !isSelected) return;
               if (selectedFiles.size === 0) {
                 handlePlay(file);
               }
-            }
-          }}
-        >
-          <p
-            class="text-sm font-medium truncate transition-colors {invalid
-              ? 'text-red-400'
-              : $currentFile === file.path
-                ? 'text-[#1db954]'
-                : 'text-white group-hover:text-white'}"
+            }}
+            onkeydown={(event) => {
+              if (!invalid && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
+                if (selectedFiles.size === 0) {
+                  handlePlay(file);
+                }
+              }
+            }}
           >
-            {file.name}
-          </p>
-          <p class="text-xs {invalid ? 'text-red-400/60' : 'text-white/40'}">
-            {#if invalid}
-              {$t("library.invalidFile")}
-            {:else}
-              {file.bpm || 120} BPM • {#if (file.note_density || 0) < 3}{$t("library.easy")}{:else if (file.note_density || 0) < 6}{$t("library.medium")}{:else if (file.note_density || 0) < 10}{$t("library.hard")}{:else}{$t("library.expert")}{/if}
-            {/if}
-          </p>
-        </div>
-
-        <!-- Duration -->
-        <div class="text-sm flex-shrink-0 tabular-nums flex items-center gap-1 {invalid ? 'text-red-400' : 'text-white/40'}">
-          {#if invalid}
-            <Icon icon="mdi:alert-circle" class="w-4 h-4" />
-          {:else}
-            {`${Math.floor(file.duration / 60)}:${String(Math.floor(file.duration % 60)).padStart(2, "0")}`}
-          {/if}
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="flex items-center gap-1 flex-shrink-0">
-          {#if !invalid}
-            <!-- Favorite Button -->
-            <button
-              class="p-1.5 rounded-full transition-all {favoriteHashes.has(file.hash)
-                ? 'text-[#1db954]'
-                : 'text-white/30 opacity-0 group-hover:opacity-100 hover:text-white'}"
-              onclick={(e) => {
-                e.stopPropagation();
-                handleToggleFavorite(file);
-              }}
-              title={favoriteHashes.has(file.hash)
-                ? $t("library.removeFromFavorites")
-                : $t("library.addToFavorites")}
+            <p
+              class="text-sm font-medium truncate transition-colors {invalid
+                ? 'text-red-400'
+                : $currentFile === file.path
+                  ? 'text-[#1db954]'
+                  : 'text-white group-hover:text-white'}"
             >
-              <Icon
-                icon={favoriteHashes.has(file.hash) ? "mdi:heart" : "mdi:heart-outline"}
-                class="w-5 h-5"
-              />
-            </button>
+              {file.name}
+            </p>
+            <p class="text-xs {invalid ? 'text-red-400/60' : 'text-white/40'}">
+              {#if invalid}
+                {$t("library.invalidFile")}
+              {:else}
+                {file.bpm || 120} BPM • {#if (file.note_density || 0) < 3}{$t(
+                    "library.easy",
+                  )}{:else if (file.note_density || 0) < 6}{$t(
+                    "library.medium",
+                  )}{:else if (file.note_density || 0) < 10}{$t(
+                    "library.hard",
+                  )}{:else}{$t("library.expert")}{/if}
+              {/if}
+            </p>
+          </div>
 
-            <!-- Add to Playlist Menu -->
-            <div class="relative">
+          <!-- Duration -->
+          <div
+            class="text-sm flex-shrink-0 tabular-nums flex items-center gap-1 {invalid
+              ? 'text-red-400'
+              : 'text-white/40'}"
+          >
+            {#if invalid}
+              <Icon icon="mdi:alert-circle" class="w-4 h-4" />
+            {:else}
+              {`${Math.floor(file.duration / 60)}:${String(Math.floor(file.duration % 60)).padStart(2, "0")}`}
+            {/if}
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex items-center gap-1 flex-shrink-0">
+            {#if !invalid}
+              <!-- Favorite Button -->
               <button
-                class="p-1.5 rounded-full text-white/30 opacity-0 group-hover:opacity-100 hover:text-white transition-all"
+                class="p-1.5 rounded-full transition-all {favoriteHashes.has(
+                  file.hash,
+                )
+                  ? 'text-[#1db954]'
+                  : 'text-white/30 opacity-0 group-hover:opacity-100 hover:text-white'}"
                 onclick={(e) => {
                   e.stopPropagation();
-                  showPlaylistMenu = showPlaylistMenu === file.path ? null : file.path;
+                  handleToggleFavorite(file);
                 }}
-                title={$t("library.addToPlaylist")}
+                title={favoriteHashes.has(file.hash)
+                  ? $t("library.removeFromFavorites")
+                  : $t("library.addToFavorites")}
               >
-                <Icon icon="mdi:playlist-plus" class="w-5 h-5" />
+                <Icon
+                  icon={favoriteHashes.has(file.hash)
+                    ? "mdi:heart"
+                    : "mdi:heart-outline"}
+                  class="w-5 h-5"
+                />
               </button>
 
-            {#if showPlaylistMenu === file.path}
-              <div
-                class="absolute right-0 top-full mt-1 w-48 bg-[#282828] rounded-lg shadow-xl border border-white/10 py-1 z-50"
-                transition:fly={{ y: -5, duration: 150 }}
-              >
+              <!-- Add to Playlist Menu -->
+              <div class="relative">
                 <button
-                  class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+                  class="p-1.5 rounded-full text-white/30 opacity-0 group-hover:opacity-100 hover:text-white transition-all"
                   onclick={(e) => {
                     e.stopPropagation();
-                    addToQueue(file);
-                    showPlaylistMenu = null;
+                    showPlaylistMenu =
+                      showPlaylistMenu === file.path ? null : file.path;
                   }}
+                  title={$t("library.addToPlaylist")}
                 >
-                  <Icon icon="mdi:playlist-music" class="w-4 h-4" />
-                  {$t("library.addToQueue")}
+                  <Icon icon="mdi:playlist-plus" class="w-5 h-5" />
                 </button>
 
-                {#if $savedPlaylists.length > 0}
-                  <div class="border-t border-white/10 my-1"></div>
-                  <div class="max-h-48 overflow-y-auto">
-                    {#each $savedPlaylists as pl}
-                      <button
-                        class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2 truncate"
-                        onclick={(e) => {
-                          e.stopPropagation();
-                          handleAddToPlaylist(pl.id, file);
-                        }}
-                      >
-                        <Icon icon="mdi:playlist-music-outline" class="w-4 h-4 flex-shrink-0" />
-                        <span class="truncate">{pl.name}</span>
-                      </button>
-                    {/each}
+                {#if showPlaylistMenu === file.path}
+                  <div
+                    class="absolute right-0 top-full mt-1 w-48 bg-[#282828] rounded-lg shadow-xl border border-white/10 py-1 z-50"
+                    transition:fly={{ y: -5, duration: 150 }}
+                  >
+                    <button
+                      class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        addToQueue(file);
+                        showPlaylistMenu = null;
+                      }}
+                    >
+                      <Icon icon="mdi:playlist-music" class="w-4 h-4" />
+                      {$t("library.addToQueue")}
+                    </button>
+
+                    {#if $savedPlaylists.length > 0}
+                      <div class="border-t border-white/10 my-1"></div>
+                      <div class="max-h-48 overflow-y-auto">
+                        {#each $savedPlaylists as pl}
+                          <button
+                            class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2 truncate"
+                            onclick={(e) => {
+                              e.stopPropagation();
+                              handleAddToPlaylist(pl.id, file);
+                            }}
+                          >
+                            <Icon
+                              icon="mdi:playlist-music-outline"
+                              class="w-4 h-4 flex-shrink-0"
+                            />
+                            <span class="truncate">{pl.name}</span>
+                          </button>
+                        {/each}
+                      </div>
+                    {/if}
                   </div>
                 {/if}
               </div>
             {/if}
           </div>
-          {/if}
         </div>
-      </div>
-    {/each}
+      {/each}
 
-    <!-- Virtual scroll padding bottom -->
-    <div style="height: {bottomPadding}px"></div>
+      <!-- Virtual scroll padding bottom -->
+      <div style="height: {bottomPadding}px"></div>
 
-    <!-- Load More Section -->
-    {#if $hasMoreFiles && !$isLoadingMidi}
-      <div class="py-4 flex flex-col items-center gap-2 border-t border-white/5 mt-2">
-        <p class="text-xs text-white/40">
-          {$t("library.showingOf", { values: { loaded: $midiFiles.length.toLocaleString(), total: $totalMidiCount.toLocaleString() } })}
-        </p>
-        <div class="flex gap-2">
-          <button
-            class="px-4 py-2 rounded-lg bg-[#1db954] hover:bg-[#1ed760] text-white text-sm font-medium transition-colors flex items-center gap-2"
-            onclick={loadMoreFiles}
-          >
-            <Icon icon="mdi:plus" class="w-4 h-4" />
-            {$t("library.loadMore")}
-          </button>
-          <button
-            class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 text-sm font-medium transition-colors flex items-center gap-2"
-            onclick={loadAllFiles}
-            title={$t("library.loadAll")}
-          >
-            <Icon icon="mdi:download" class="w-4 h-4" />
-            {$t("library.loadAll")}
-          </button>
+      <!-- Load More Section -->
+      {#if $hasMoreFiles && !$isLoadingMidi}
+        <div
+          class="py-4 flex flex-col items-center gap-2 border-t border-white/5 mt-2"
+        >
+          <p class="text-xs text-white/40">
+            {$t("library.showingOf", {
+              values: {
+                loaded: $midiFiles.length.toLocaleString(),
+                total: $totalMidiCount.toLocaleString(),
+              },
+            })}
+          </p>
+          <div class="flex gap-2">
+            <button
+              class="px-4 py-2 rounded-lg bg-[#1db954] hover:bg-[#1ed760] text-white text-sm font-medium transition-colors flex items-center gap-2"
+              onclick={loadMoreFiles}
+            >
+              <Icon icon="mdi:plus" class="w-4 h-4" />
+              {$t("library.loadMore")}
+            </button>
+            <button
+              class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 text-sm font-medium transition-colors flex items-center gap-2"
+              onclick={loadAllFiles}
+              title={$t("library.loadAll")}
+            >
+              <Icon icon="mdi:download" class="w-4 h-4" />
+              {$t("library.loadAll")}
+            </button>
+          </div>
         </div>
-      </div>
-    {/if}
+      {/if}
 
-    <!-- Loading more indicator -->
-    {#if $isLoadingMidi && $midiFiles.length > 0}
-      <div class="py-4 flex items-center justify-center gap-2 border-t border-white/5 mt-2">
-        <Icon icon="mdi:loading" class="w-5 h-5 text-[#1db954] animate-spin" />
-        <span class="text-sm text-white/60">
-          Loading {$midiLoadProgress.loaded.toLocaleString()} / {$midiLoadProgress.total.toLocaleString()}...
-        </span>
-      </div>
-    {/if}
-  </div>
+      <!-- Loading more indicator -->
+      {#if $isLoadingMidi && $midiFiles.length > 0}
+        <div
+          class="py-4 flex items-center justify-center gap-2 border-t border-white/5 mt-2"
+        >
+          <Icon
+            icon="mdi:loading"
+            class="w-5 h-5 text-[#1db954] animate-spin"
+          />
+          <span class="text-sm text-white/60">
+            Loading {$midiLoadProgress.loaded.toLocaleString()} / {$midiLoadProgress.total.toLocaleString()}...
+          </span>
+        </div>
+      {/if}
+    </div>
   {/if}
 
   {#if $isLoadingMidi && $midiFiles.length === 0 && $midiLoadProgress.loaded === 0}
@@ -1057,16 +1254,26 @@
       <div
         class="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mb-6"
       >
-        <Icon icon="mdi:loading" class="w-10 h-10 text-[#1db954] animate-spin" />
+        <Icon
+          icon="mdi:loading"
+          class="w-10 h-10 text-[#1db954] animate-spin"
+        />
       </div>
-      <p class="text-lg font-semibold mb-2 text-white/60">{$t("library.loadingLibrary")}</p>
+      <p class="text-lg font-semibold mb-2 text-white/60">
+        {$t("library.loadingLibrary")}
+      </p>
       {#if $midiLoadProgress.total > 0}
-        <p class="text-sm mb-3">{$midiLoadProgress.loaded.toLocaleString()} / {$midiLoadProgress.total.toLocaleString()} {$t("library.songs")}</p>
+        <p class="text-sm mb-3">
+          {$midiLoadProgress.loaded.toLocaleString()} / {$midiLoadProgress.total.toLocaleString()}
+          {$t("library.songs")}
+        </p>
         <!-- Progress bar -->
         <div class="w-48 h-1.5 bg-white/10 rounded-full overflow-hidden">
           <div
             class="h-full bg-[#1db954] rounded-full transition-all duration-300"
-            style="width: {($midiLoadProgress.loaded / $midiLoadProgress.total) * 100}%"
+            style="width: {($midiLoadProgress.loaded /
+              $midiLoadProgress.total) *
+              100}%"
           ></div>
         </div>
       {:else}
@@ -1083,7 +1290,9 @@
       >
         <Icon icon="mdi:music-note-off" class="w-10 h-10 opacity-50" />
       </div>
-      <p class="text-lg font-semibold mb-2 text-white/60">{$t("library.noResultsFound")}</p>
+      <p class="text-lg font-semibold mb-2 text-white/60">
+        {$t("library.noResultsFound")}
+      </p>
       <p class="text-sm">{$t("library.tryDifferentSearch")}</p>
     </div>
   {:else if $midiFiles.length === 0 && !$isLoadingMidi}
@@ -1096,7 +1305,9 @@
       >
         <Icon icon="mdi:music-note-plus" class="w-10 h-10 opacity-50" />
       </div>
-      <p class="text-lg font-semibold mb-2 text-white/60">{$t("library.noSongsYet")}</p>
+      <p class="text-lg font-semibold mb-2 text-white/60">
+        {$t("library.noSongsYet")}
+      </p>
       <p class="text-sm">{$t("library.placeMidiFiles")}</p>
     </div>
   {/if}
@@ -1109,14 +1320,19 @@
     transition:fly={{ y: 20, duration: 200 }}
   >
     <div
-      class="px-4 py-2 rounded-full shadow-lg flex items-center gap-2 {toast.type === 'success'
+      class="px-4 py-2 rounded-full shadow-lg flex items-center gap-2 {toast.type ===
+      'success'
         ? 'bg-[#1db954] text-black'
         : toast.type === 'error'
           ? 'bg-red-500 text-white'
           : 'bg-white/20 text-white'}"
     >
       <Icon
-        icon={toast.type === 'success' ? 'mdi:check-circle' : toast.type === 'error' ? 'mdi:alert-circle' : 'mdi:information'}
+        icon={toast.type === "success"
+          ? "mdi:check-circle"
+          : toast.type === "error"
+            ? "mdi:alert-circle"
+            : "mdi:information"}
         class="w-4 h-4"
       />
       <span class="text-sm font-medium">{toast.message}</span>
@@ -1133,7 +1349,10 @@
     <!-- Backdrop -->
     <button
       class="absolute inset-0 bg-black/60"
-      onclick={() => { showImportModal = false; urlInput = ""; }}
+      onclick={() => {
+        showImportModal = false;
+        urlInput = "";
+      }}
     ></button>
 
     <!-- Modal -->
@@ -1142,11 +1361,16 @@
       transition:fly={{ y: 20, duration: 200 }}
     >
       <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b border-white/10">
+      <div
+        class="flex items-center justify-between p-4 border-b border-white/10"
+      >
         <h3 class="text-lg font-bold">{$t("modals.import.title")}</h3>
         <button
           class="p-1 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-          onclick={() => { showImportModal = false; urlInput = ""; }}
+          onclick={() => {
+            showImportModal = false;
+            urlInput = "";
+          }}
         >
           <Icon icon="mdi:close" class="w-5 h-5" />
         </button>
@@ -1160,12 +1384,23 @@
           onclick={openFileDialog}
         >
           <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-xl bg-white/5 group-hover:bg-[#1db954]/20 flex items-center justify-center transition-colors">
-              <Icon icon="mdi:file-music" class="w-5 h-5 text-white/60 group-hover:text-[#1db954] transition-colors" />
+            <div
+              class="w-10 h-10 rounded-xl bg-white/5 group-hover:bg-[#1db954]/20 flex items-center justify-center transition-colors"
+            >
+              <Icon
+                icon="mdi:file-music"
+                class="w-5 h-5 text-white/60 group-hover:text-[#1db954] transition-colors"
+              />
             </div>
             <div class="text-left">
-              <p class="font-semibold text-white group-hover:text-[#1db954] transition-colors">{$t("modals.import.midiFiles")}</p>
-              <p class="text-xs text-white/50">{$t("modals.import.selectMidFiles")}</p>
+              <p
+                class="font-semibold text-white group-hover:text-[#1db954] transition-colors"
+              >
+                {$t("modals.import.midiFiles")}
+              </p>
+              <p class="text-xs text-white/50">
+                {$t("modals.import.selectMidFiles")}
+              </p>
             </div>
           </div>
         </button>
@@ -1178,12 +1413,23 @@
             onclick={openZipDialog}
           >
             <div class="flex flex-col items-center gap-2 text-center">
-              <div class="w-10 h-10 rounded-xl bg-white/5 group-hover:bg-[#1db954]/20 flex items-center justify-center transition-colors">
-                <Icon icon="mdi:folder-zip" class="w-5 h-5 text-white/60 group-hover:text-[#1db954] transition-colors" />
+              <div
+                class="w-10 h-10 rounded-xl bg-white/5 group-hover:bg-[#1db954]/20 flex items-center justify-center transition-colors"
+              >
+                <Icon
+                  icon="mdi:folder-zip"
+                  class="w-5 h-5 text-white/60 group-hover:text-[#1db954] transition-colors"
+                />
               </div>
               <div>
-                <p class="font-semibold text-sm text-white group-hover:text-[#1db954] transition-colors">{$t("modals.import.zipFile")}</p>
-                <p class="text-xs text-white/50">{$t("modals.import.extractMid")}</p>
+                <p
+                  class="font-semibold text-sm text-white group-hover:text-[#1db954] transition-colors"
+                >
+                  {$t("modals.import.zipFile")}
+                </p>
+                <p class="text-xs text-white/50">
+                  {$t("modals.import.extractMid")}
+                </p>
               </div>
             </div>
           </button>
@@ -1194,12 +1440,23 @@
             onclick={openFolderDialog}
           >
             <div class="flex flex-col items-center gap-2 text-center">
-              <div class="w-10 h-10 rounded-xl bg-white/5 group-hover:bg-[#1db954]/20 flex items-center justify-center transition-colors">
-                <Icon icon="mdi:folder-open" class="w-5 h-5 text-white/60 group-hover:text-[#1db954] transition-colors" />
+              <div
+                class="w-10 h-10 rounded-xl bg-white/5 group-hover:bg-[#1db954]/20 flex items-center justify-center transition-colors"
+              >
+                <Icon
+                  icon="mdi:folder-open"
+                  class="w-5 h-5 text-white/60 group-hover:text-[#1db954] transition-colors"
+                />
               </div>
               <div>
-                <p class="font-semibold text-sm text-white group-hover:text-[#1db954] transition-colors">{$t("modals.import.folder")}</p>
-                <p class="text-xs text-white/50">{$t("modals.import.scanForMid")}</p>
+                <p
+                  class="font-semibold text-sm text-white group-hover:text-[#1db954] transition-colors"
+                >
+                  {$t("modals.import.folder")}
+                </p>
+                <p class="text-xs text-white/50">
+                  {$t("modals.import.scanForMid")}
+                </p>
               </div>
             </div>
           </button>
@@ -1208,20 +1465,24 @@
         <!-- Divider -->
         <div class="flex items-center gap-3">
           <div class="flex-1 h-px bg-white/10"></div>
-          <span class="text-xs text-white/40">{$t("modals.import.orPasteUrl")}</span>
+          <span class="text-xs text-white/40"
+            >{$t("modals.import.orPasteUrl")}</span
+          >
           <div class="flex-1 h-px bg-white/10"></div>
         </div>
 
         <!-- URL Input -->
         <div>
-          <label class="block text-sm font-medium text-white/70 mb-2">{$t("modals.import.pasteUrl")}</label>
+          <label class="block text-sm font-medium text-white/70 mb-2"
+            >{$t("modals.import.pasteUrl")}</label
+          >
           <div class="flex gap-2">
             <input
               type="text"
               bind:value={urlInput}
               placeholder={$t("modals.import.urlPlaceholder")}
               class="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#1db954] focus:border-transparent transition-all"
-              onkeydown={(e) => e.key === 'Enter' && downloadFromUrl()}
+              onkeydown={(e) => e.key === "Enter" && downloadFromUrl()}
               use:autofocus
             />
             <button
@@ -1234,10 +1495,14 @@
               {:else}
                 <Icon icon="mdi:download" class="w-4 h-4" />
               {/if}
-              {isDownloading ? $t("modals.import.downloading") : $t("modals.import.download")}
+              {isDownloading
+                ? $t("modals.import.downloading")
+                : $t("modals.import.download")}
             </button>
           </div>
-          <p class="text-xs text-white/40 mt-2">{$t("modals.import.urlHint")}</p>
+          <p class="text-xs text-white/40 mt-2">
+            {$t("modals.import.urlHint")}
+          </p>
         </div>
       </div>
     </div>
@@ -1250,9 +1515,7 @@
     class="fixed inset-0 z-50 flex items-center justify-center"
     transition:fade={{ duration: 150 }}
   >
-    <button
-      class="absolute inset-0 bg-black/60"
-      onclick={skipPlaylistPrompt}
+    <button class="absolute inset-0 bg-black/60" onclick={skipPlaylistPrompt}
     ></button>
 
     <div
@@ -1260,19 +1523,25 @@
       transition:fly={{ y: 20, duration: 200 }}
     >
       <div class="p-4 text-center">
-        <div class="w-12 h-12 rounded-full bg-[#1db954]/20 flex items-center justify-center mx-auto mb-3">
+        <div
+          class="w-12 h-12 rounded-full bg-[#1db954]/20 flex items-center justify-center mx-auto mb-3"
+        >
           <Icon icon="mdi:playlist-plus" class="w-6 h-6 text-[#1db954]" />
         </div>
-        <h3 class="text-lg font-bold mb-2">{$t("modals.createPlaylist.createFromImport")}</h3>
+        <h3 class="text-lg font-bold mb-2">
+          {$t("modals.createPlaylist.createFromImport")}
+        </h3>
         <p class="text-sm text-white/60 mb-4">
-          {$t("modals.createPlaylist.songsImported", { values: { count: lastImportedFiles.length } })}
+          {$t("modals.createPlaylist.songsImported", {
+            values: { count: lastImportedFiles.length },
+          })}
         </p>
         <input
           type="text"
           bind:value={newPlaylistName}
           placeholder={$t("modals.createPlaylist.playlistName")}
           class="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#1db954] focus:border-transparent transition-all mb-4"
-          onkeydown={(e) => e.key === 'Enter' && createPlaylistFromImport()}
+          onkeydown={(e) => e.key === "Enter" && createPlaylistFromImport()}
         />
       </div>
 
@@ -1303,7 +1572,10 @@
   >
     <button
       class="absolute inset-0 bg-black/60"
-      onclick={() => { showCreatePlaylistModal = false; createPlaylistName = ""; }}
+      onclick={() => {
+        showCreatePlaylistModal = false;
+        createPlaylistName = "";
+      }}
     ></button>
 
     <div
@@ -1311,26 +1583,35 @@
       transition:fly={{ y: 20, duration: 200 }}
     >
       <div class="p-4 text-center">
-        <div class="w-12 h-12 rounded-full bg-[#1db954]/20 flex items-center justify-center mx-auto mb-3">
+        <div
+          class="w-12 h-12 rounded-full bg-[#1db954]/20 flex items-center justify-center mx-auto mb-3"
+        >
           <Icon icon="mdi:playlist-plus" class="w-6 h-6 text-[#1db954]" />
         </div>
-        <h3 class="text-lg font-bold mb-2">{$t("modals.createPlaylist.title")}</h3>
+        <h3 class="text-lg font-bold mb-2">
+          {$t("modals.createPlaylist.title")}
+        </h3>
         <p class="text-sm text-white/60 mb-4">
-          {$t("modals.createPlaylist.songsSelected", { values: { count: selectedFiles.size } })}
+          {$t("modals.createPlaylist.songsSelected", {
+            values: { count: selectedFiles.size },
+          })}
         </p>
         <input
           type="text"
           bind:value={createPlaylistName}
           placeholder={$t("modals.createPlaylist.playlistName")}
           class="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#1db954] focus:border-transparent transition-all mb-4"
-          onkeydown={(e) => e.key === 'Enter' && createPlaylistFromSelected()}
+          onkeydown={(e) => e.key === "Enter" && createPlaylistFromSelected()}
         />
       </div>
 
       <div class="flex gap-2 p-4 pt-0">
         <button
           class="flex-1 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium text-sm transition-colors"
-          onclick={() => { showCreatePlaylistModal = false; createPlaylistName = ""; }}
+          onclick={() => {
+            showCreatePlaylistModal = false;
+            createPlaylistName = "";
+          }}
         >
           {$t("common.cancel")}
         </button>
@@ -1354,16 +1635,19 @@
   }}
   onkeydown={(e) => {
     // Escape to clear selection
-    if (e.key === 'Escape' && selectedFiles.size > 0) {
+    if (e.key === "Escape" && selectedFiles.size > 0) {
       clearSelection();
     }
     // Ctrl+A to select all when focused in library
-    if ((e.ctrlKey || e.metaKey) && e.key === 'a' && scrollContainer?.contains(document.activeElement)) {
+    if (
+      (e.ctrlKey || e.metaKey) &&
+      e.key === "a" &&
+      scrollContainer?.contains(document.activeElement)
+    ) {
       e.preventDefault();
       selectAll();
     }
   }}
 />
 
-<SongContextMenu {contextMenu} onClose={() => contextMenu = null} />
-
+<SongContextMenu {contextMenu} onClose={() => (contextMenu = null)} />

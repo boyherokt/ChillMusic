@@ -18,7 +18,8 @@
     "stats": "Stats",
     "music": "Music",
     "online": "Online",
-    "app": "App"
+    "app": "App",
+    "donate": "Donate"
   },
   "player": {
     "play": "Play",
@@ -40,8 +41,8 @@
   },
   "noteMode": {
     "title": "Note Mode",
-    "yuelyn": "YueLyn",
-    "yuelynDesc": "YueLyn's favorite play mode",
+    "yuelyn": "HuwngNef",
+    "yuelynDesc": "HuwngNef's favorite play mode",
     "closest": "Closest",
     "closestDesc": "Best fit for most songs",
     "wide": "Wide",
@@ -155,7 +156,7 @@
     "about": {
       "title": "About",
       "description": "Midi Player for Where Winds Meet",
-      "byYueLyn": "By YueLyn",
+      "byYueLyn": "By HuwngNef",
       "updateAvailable": "Update Available",
       "clickToDownload": "Click to download",
       "latestVersion": "You're on the latest version"
@@ -396,7 +397,8 @@
     "gameFound": "Game found",
     "on": "ON",
     "off": "OFF",
-    "supportOnKofi": "Support on Ko-fi"
+    "supportOnKofi": "Support on Ko-fi",
+    "joinDiscordVDC": "Join Discord (Vùng Đất Chill)"
   },
   "stats": {
     "title": "Stats",

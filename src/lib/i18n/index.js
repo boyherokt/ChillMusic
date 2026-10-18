@@ -7,6 +7,7 @@ const STORAGE_KEY = 'wwm-language';
 
 // Available languages (flags use Iconify circle-flags)
 export const languages = [
+  { code: 'vi', name: 'Tiếng Việt', flag: 'circle-flags:vn' },
   { code: 'en', name: 'English', flag: 'circle-flags:us' },
   { code: 'zh', name: '中文', flag: 'circle-flags:cn' },
   { code: 'ja', name: '日本語', flag: 'circle-flags:jp' },
@@ -48,6 +49,7 @@ function hasNewKeys(bundled, user, path = '') {
 // Bundled locale imports
 const bundledLocales = {
   en: () => import('./locales/en.json'),
+  vi: () => import('./locales/vi.json'),
   zh: () => import('./locales/zh.json'),
   ja: () => import('./locales/ja.json'),
   ko: () => import('./locales/ko.json'),
@@ -97,9 +99,9 @@ for (const lang of Object.keys(bundledLocales)) {
 // Get saved language or default to English
 function getInitialLocale() {
   if (typeof localStorage !== 'undefined') {
-    return localStorage.getItem(STORAGE_KEY) || 'en';
+    return localStorage.getItem(STORAGE_KEY) || 'vi';
   }
-  return 'en';
+  return 'vi';
 }
 
 // Current language store (for UI binding)
@@ -162,7 +164,7 @@ export async function getLocalesPath() {
 
 // Reload current locale (after user edits)
 export async function reloadCurrentLocale() {
-  const lang = localStorage.getItem(STORAGE_KEY) || 'en';
+  const lang = localStorage.getItem(STORAGE_KEY) || 'vi';
   // Force reload by setting to null then back
   locale.set(null);
   await waitLocale();
@@ -173,7 +175,7 @@ export async function reloadCurrentLocale() {
 
 // Initialize i18n
 init({
-  fallbackLocale: 'en',
+  fallbackLocale: 'vi',
   initialLocale: getInitialLocale(),
 });
 

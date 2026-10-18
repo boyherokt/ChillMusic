@@ -40,8 +40,8 @@
   },
   "noteMode": {
     "title": "โหมดโน้ต",
-    "yuelyn": "YueLyn",
-    "yuelynDesc": "โหมดเล่นที่ YueLyn ชอบที่สุด",
+    "yuelyn": "HuwngNef",
+    "yuelynDesc": "โหมดเล่นที่ HuwngNef ชอบที่สุด",
     "closest": "ใกล้ที่สุด",
     "closestDesc": "เหมาะกับเพลงส่วนใหญ่",
     "wide": "กว้าง",
@@ -155,7 +155,7 @@
     "about": {
       "title": "เกี่ยวกับ",
       "description": "Midi Player สำหรับ Where Winds Meet",
-      "byYueLyn": "โดย YueLyn",
+      "byYueLyn": "โดย HuwngNef",
       "updateAvailable": "มีอัปเดตใหม่",
       "clickToDownload": "คลิกเพื่อดาวน์โหลด",
       "latestVersion": "คุณใช้เวอร์ชันล่าสุดแล้ว"
@@ -396,7 +396,8 @@
     "gameFound": "พบเกม",
     "on": "เปิด",
     "off": "ปิด",
-    "supportOnKofi": "สนับสนุนบน Ko-fi"
+    "supportOnKofi": "สนับสนุนบน Ko-fi",
+    "joinDiscordVDC": "เข้าร่วม Discord (Vùng Đất Chill)"
   },
   "stats": {
     "title": "สถิติ",

@@ -1,7 +1,7 @@
 <script>
   export let compact = false;
   export let keybindings = { pause_resume: "F9", previous: "F10", next: "F11" };
-  import Icon from '@iconify/svelte';
+  import Icon from "@iconify/svelte";
   import { t } from "svelte-i18n";
 
   import {
@@ -9,19 +9,30 @@
     isPaused,
     loopMode,
     shuffleMode,
+    currentFile,
+    playlist,
+    playbackContext,
     pauseResume,
     stopPlayback,
     playNext,
     playPrevious,
     toggleLoop,
-    toggleShuffle
-  } from '../stores/player.js';
+    toggleShuffle,
+  } from "../stores/player.js";
+
+  $: hasPlayableTracks =
+    $isPlaying ||
+    !!$currentFile ||
+    $playlist.length > 0 ||
+    (!!$playbackContext?.tracks && $playbackContext.tracks.length > 0);
 </script>
 
 <div class="flex items-center justify-center gap-4 {compact ? 'py-2' : ''}">
   <!-- Shuffle -->
   <button
-    class="transition-colors {$shuffleMode ? 'text-[#1db954]' : 'text-white/40 hover:text-white'}"
+    class="transition-colors {$shuffleMode
+      ? 'text-[#1db954]'
+      : 'text-white/40 hover:text-white'}"
     on:click={toggleShuffle}
     title={$t("player.shuffle")}
   >
@@ -32,8 +43,8 @@
   <button
     class="text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
     on:click={playPrevious}
-    disabled={!$isPlaying}
-    title="{$t("player.previous")} ({keybindings.previous})"
+    disabled={!hasPlayableTracks}
+    title="{$t('player.previous')} ({keybindings.previous})"
   >
     <Icon icon="mdi:skip-previous" class="w-5 h-5" />
   </button>
@@ -42,7 +53,7 @@
   <button
     class="w-8 h-8 rounded-full bg-white hover:scale-105 transition-transform flex items-center justify-center"
     on:click={pauseResume}
-    title="{$t("controls.playPause")} ({keybindings.pause_resume})"
+    title="{$t('controls.playPause')} ({keybindings.pause_resume})"
   >
     {#if $isPlaying && !$isPaused}
       <Icon icon="mdi:pause" class="w-5 h-5 text-black" />
@@ -55,15 +66,17 @@
   <button
     class="text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
     on:click={playNext}
-    disabled={!$isPlaying}
-    title="{$t("player.next")} ({keybindings.next})"
+    disabled={!hasPlayableTracks}
+    title="{$t('player.next')} ({keybindings.next})"
   >
     <Icon icon="mdi:skip-next" class="w-5 h-5" />
   </button>
 
   <!-- Loop -->
   <button
-    class="transition-colors {$loopMode ? 'text-[#1db954]' : 'text-white/40 hover:text-white'}"
+    class="transition-colors {$loopMode
+      ? 'text-[#1db954]'
+      : 'text-white/40 hover:text-white'}"
     on:click={toggleLoop}
     title={$t("player.loop")}
   >

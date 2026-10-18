@@ -1,12 +1,12 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "WWM Overlay",
-  "version": "0.1.0",
-  "identifier": "com.wwm.overlay",
+  "productName": "Chill-Music",
+  "version": "1.2.1",
+  "identifier": "com.chill.music",
   "build": {
     "beforeDevCommand": "bun run dev",
     "beforeBuildCommand": "bun run build",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://127.0.0.1:5173",
     "frontendDist": "../dist"
   },
   "app": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "WWM MIDI Player",
+        "title": "Chill Music",
         "width": 1180,
         "height": 620,
         "minWidth": 960,
@@ -33,7 +33,9 @@
     ],
     "security": {
       "csp": null,
-      "capabilities": ["default"]
+      "capabilities": [
+        "default"
+      ]
     }
   },
   "bundle": {

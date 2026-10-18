@@ -12,8 +12,8 @@ export default {
         sans: ['Inter', 'Segoe UI', 'system-ui', '-apple-system', 'BlinkMacSystemFont', ...defaultTheme.fontFamily.sans],
       },
       colors: {
-        'overlay-bg': 'rgba(15, 23, 42, 0.85)',
-        'overlay-border': 'rgba(100, 116, 139, 0.3)',
+        'overlay-bg': 'rgba(10, 10, 10, 0.90)',
+        'overlay-border': 'rgba(255, 255, 255, 0.08)',
         spotify: {
           green: '#1db954',
           neon: '#1ed760',

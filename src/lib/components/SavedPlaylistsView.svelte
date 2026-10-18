@@ -22,6 +22,7 @@
     setPlaylistsOrder,
     addManyToSavedPlaylist,
     playMidi,
+    playFromContext,
     playlist,
     activePlaylistId,
     currentFile,
@@ -30,6 +31,7 @@
   } from "../stores/player.js";
   import SongContextMenu from "./SongContextMenu.svelte";
   import SearchSort from "./SearchSort.svelte";
+  import { searchMatch } from "../utils/stringUtils.js";
 
   // Search & Sort for tracks
   let searchQuery = "";
@@ -37,10 +39,36 @@
 
   $: sortOptions = [
     { id: "manual", label: $t("sort.manual"), icon: "mdi:drag" },
-    { id: "name-asc", label: $t("sort.nameAsc"), icon: "mdi:sort-alphabetical-ascending" },
-    { id: "name-desc", label: $t("sort.nameDesc"), icon: "mdi:sort-alphabetical-descending" },
-    { id: "duration-asc", label: $t("sort.durationAsc"), icon: "mdi:sort-numeric-ascending" },
-    { id: "duration-desc", label: $t("sort.durationDesc"), icon: "mdi:sort-numeric-descending" },
+    {
+      id: "name-asc",
+      label: $t("sort.nameAsc"),
+      icon: "mdi:sort-alphabetical-ascending",
+    },
+    {
+      id: "name-desc",
+      label: $t("sort.nameDesc"),
+      icon: "mdi:sort-alphabetical-descending",
+    },
+    {
+      id: "duration-asc",
+      label: $t("sort.durationAsc"),
+      icon: "mdi:sort-numeric-ascending",
+    },
+    {
+      id: "duration-desc",
+      label: $t("sort.durationDesc"),
+      icon: "mdi:sort-numeric-descending",
+    },
+    {
+      id: "date-desc",
+      label: $t("sort.dateDesc"),
+      icon: "mdi:calendar-clock",
+    },
+    {
+      id: "date-asc",
+      label: $t("sort.dateAsc"),
+      icon: "mdi:calendar",
+    },
   ];
 
   // Context menu
@@ -99,17 +127,26 @@
   $: filteredTracks = (() => {
     if (!selectedPlaylist) return [];
     let result = searchQuery.trim()
-      ? selectedPlaylist.tracks.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      ? selectedPlaylist.tracks.filter((t) => searchMatch(searchQuery, t.name))
       : [...selectedPlaylist.tracks];
 
     if (sortBy !== "manual") {
       result.sort((a, b) => {
         switch (sortBy) {
-          case "name-asc": return a.name.localeCompare(b.name);
-          case "name-desc": return b.name.localeCompare(a.name);
-          case "duration-asc": return (a.duration || 0) - (b.duration || 0);
-          case "duration-desc": return (b.duration || 0) - (a.duration || 0);
-          default: return 0;
+          case "name-asc":
+            return a.name.localeCompare(b.name);
+          case "name-desc":
+            return b.name.localeCompare(a.name);
+          case "duration-asc":
+            return (a.duration || 0) - (b.duration || 0);
+          case "duration-desc":
+            return (b.duration || 0) - (a.duration || 0);
+          case "date-asc":
+            return (a.mtime || 0) - (b.mtime || 0);
+          case "date-desc":
+            return (b.mtime || 0) - (a.mtime || 0);
+          default:
+            return 0;
         }
       });
     }
@@ -187,7 +224,33 @@
   }
 
   async function handleLoadToQueue(playlist) {
-    await loadPlaylistToQueue(playlist.id);
+    if (!playlist || playlist.tracks.length === 0) return;
+    activePlaylistId.set(playlist.id);
+    await playFromContext({
+      source: "playlist",
+      id: playlist.id,
+      name: playlist.name,
+      tracks: playlist.tracks,
+      index: 0,
+      shuffle: false,
+    });
+  }
+
+  async function handleShufflePlaylist(playlist) {
+    if (!playlist || playlist.tracks.length === 0) return;
+    activePlaylistId.set(playlist.id);
+    const randomIdx =
+      playlist.tracks.length > 1
+        ? Math.floor(Math.random() * playlist.tracks.length)
+        : 0;
+    await playFromContext({
+      source: "playlist",
+      id: playlist.id,
+      name: playlist.name,
+      tracks: playlist.tracks,
+      index: randomIdx,
+      shuffle: true,
+    });
   }
 
   function goBack() {
@@ -219,19 +282,24 @@
   }
 
   async function handlePlayTrack(track) {
-    // Add track to queue and play
-    playlist.update((list) => {
-      if (!list.find((f) => f.path === track.path)) {
-        return [...list, track];
-      }
-      return list;
+    if (!selectedPlaylist || !selectedPlaylist.tracks) return;
+    const trackIndex = selectedPlaylist.tracks.findIndex(
+      (t) => t.hash === track.hash || t.path === track.path
+    );
+    await playFromContext({
+      source: "playlist",
+      id: selectedPlaylist.id,
+      name: selectedPlaylist.name,
+      tracks: selectedPlaylist.tracks,
+      index: trackIndex >= 0 ? trackIndex : 0,
+      file: track,
     });
-    await playMidi(track.path);
   }
 
   async function exportPlaylist(pl = null) {
     const targetPlaylist = pl || selectedPlaylist;
-    if (!targetPlaylist || targetPlaylist.tracks.length === 0 || isExporting) return;
+    if (!targetPlaylist || targetPlaylist.tracks.length === 0 || isExporting)
+      return;
 
     try {
       isExporting = true;
@@ -244,10 +312,10 @@
 
       if (exportPath) {
         // Hydrate tracks with paths from midiFiles using hash
-        const filesByHash = new Map($midiFiles.map(f => [f.hash, f]));
+        const filesByHash = new Map($midiFiles.map((f) => [f.hash, f]));
         const hydratedTracks = targetPlaylist.tracks
-          .map(track => filesByHash.get(track.hash) || track)
-          .filter(track => track.path); // Only include files with valid paths
+          .map((track) => filesByHash.get(track.hash) || track)
+          .filter((track) => track.path); // Only include files with valid paths
 
         await invoke("export_playlist", {
           playlistName: targetPlaylist.name,
@@ -280,7 +348,8 @@
 
         // Create a new playlist with imported files
         if (result.imported_files.length > 0) {
-          const playlistName = result.export_type === "playlist" ? result.name : "Imported";
+          const playlistName =
+            result.export_type === "playlist" ? result.name : "Imported";
           const newPlaylistId = createPlaylist(playlistName);
 
           // Add all imported files at once (single save to avoid race condition)
@@ -337,7 +406,8 @@
             </h2>
           {/if}
           <p class="text-xs text-white/50">
-            {selectedPlaylist.tracks.length} {$t("library.songs")}
+            {selectedPlaylist.tracks.length}
+            {$t("library.songs")}
           </p>
         </div>
 
@@ -351,12 +421,24 @@
             {$t("playlists.play")}
           </button>
           <button
+            class="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-sm font-medium transition-all flex items-center gap-1.5 disabled:opacity-40"
+            onclick={() => handleShufflePlaylist(selectedPlaylist)}
+            disabled={selectedPlaylist.tracks.length === 0}
+            title={$t("library.shuffleAll")}
+          >
+            <Icon icon="mdi:shuffle" class="w-4 h-4" />
+            {$t("library.shuffleAll")}
+          </button>
+          <button
             class="p-2 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-all"
             onclick={exportPlaylist}
             disabled={selectedPlaylist.tracks.length === 0 || isExporting}
             title={$t("playlists.exportPlaylist")}
           >
-            <Icon icon={isExporting ? "mdi:loading" : "mdi:export"} class="w-4 h-4 {isExporting ? 'animate-spin' : ''}" />
+            <Icon
+              icon={isExporting ? "mdi:loading" : "mdi:export"}
+              class="w-4 h-4 {isExporting ? 'animate-spin' : ''}"
+            />
           </button>
           <button
             class="p-2 rounded-full hover:bg-red-500/20 text-white/60 hover:text-red-400 transition-all"
@@ -385,7 +467,13 @@
     <div
       bind:this={scrollContainer}
       onscroll={handleScroll}
-      class="flex-1 overflow-y-auto pr-2 {showTopMask && showBottomMask ? 'scroll-mask-both' : showTopMask ? 'scroll-mask-top' : showBottomMask ? 'scroll-mask-bottom' : ''}"
+      class="flex-1 overflow-y-auto pr-2 {showTopMask && showBottomMask
+        ? 'scroll-mask-both'
+        : showTopMask
+          ? 'scroll-mask-top'
+          : showBottomMask
+            ? 'scroll-mask-bottom'
+            : ''}"
       use:dndzone={{
         items: trackItems,
         flipDurationMs,
@@ -400,13 +488,20 @@
         {@const isCurrentTrack = $currentFile === track.path}
         {@const isPlayingTrack = isCurrentTrack && $isPlaying && !$isPaused}
         <div
-          class="group spotify-list-item flex items-center gap-3 py-2 mb-1 transition-all duration-200 {sortBy === 'manual' ? 'cursor-grab active:cursor-grabbing' : ''} {isCurrentTrack ? 'bg-white/10 ring-1 ring-white/5' : 'hover:bg-white/5'} {isMissing ? 'opacity-50' : ''}"
+          class="group spotify-list-item flex items-center gap-3 py-2 mb-1 transition-all duration-200 {sortBy ===
+          'manual'
+            ? 'cursor-grab active:cursor-grabbing'
+            : ''} {isCurrentTrack
+            ? 'bg-white/10 ring-1 ring-white/5'
+            : 'hover:bg-white/5'} {isMissing ? 'opacity-50' : ''}"
           animate:flip={{ duration: isTrackDragging ? flipDurationMs : 0 }}
           oncontextmenu={(e) => !isMissing && handleContextMenu(e, track)}
         >
           <!-- Drag Handle -->
           {#if sortBy === "manual"}
-            <div class="text-white/30 hover:text-white/60 transition-colors flex-shrink-0">
+            <div
+              class="text-white/30 hover:text-white/60 transition-colors flex-shrink-0"
+            >
               <Icon icon="mdi:drag-vertical" class="w-5 h-5" />
             </div>
           {/if}
@@ -414,15 +509,32 @@
           <!-- Track Number / Play Button / Playing Indicator / Missing Icon -->
           <div class="w-8 flex items-center justify-center flex-shrink-0">
             {#if isMissing}
-              <Icon icon="mdi:file-alert" class="w-5 h-5 text-red-400" title={$t("playlists.fileMissing")} />
+              <Icon
+                icon="mdi:file-alert"
+                class="w-5 h-5 text-red-400"
+                title={$t("playlists.fileMissing")}
+              />
             {:else if isPlayingTrack}
               <div class="flex items-end gap-0.5 h-4">
-                <div class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-1" style="height: 60%;"></div>
-                <div class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-2" style="height: 100%;"></div>
-                <div class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-3" style="height: 80%;"></div>
+                <div
+                  class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-1"
+                  style="height: 60%;"
+                ></div>
+                <div
+                  class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-2"
+                  style="height: 100%;"
+                ></div>
+                <div
+                  class="w-0.5 bg-[#1db954] rounded-full animate-music-bar-3"
+                  style="height: 80%;"
+                ></div>
               </div>
             {:else}
-              <span class="text-sm text-white/40 {isCurrentTrack ? 'text-[#1db954] font-semibold' : ''} group-hover:hidden">{index + 1}</span>
+              <span
+                class="text-sm text-white/40 {isCurrentTrack
+                  ? 'text-[#1db954] font-semibold'
+                  : ''} group-hover:hidden">{index + 1}</span
+              >
               <button
                 class="hidden group-hover:flex items-center justify-center w-7 h-7 rounded-full bg-[#1db954] hover:scale-110 transition-transform shadow-lg"
                 onclick={() => handlePlayTrack(track)}
@@ -435,18 +547,37 @@
 
           <!-- Track Info -->
           <div
-            class="flex-1 min-w-0 {isMissing ? 'cursor-default' : 'cursor-pointer'}"
+            class="flex-1 min-w-0 {isMissing
+              ? 'cursor-default'
+              : 'cursor-pointer'}"
             onclick={() => !isMissing && handlePlayTrack(track)}
           >
-            <p class="text-sm font-medium truncate transition-colors {isMissing ? 'text-red-400 line-through' : isCurrentTrack ? 'text-[#1db954]' : 'text-white group-hover:text-[#1db954]'}">
+            <p
+              class="text-sm font-medium truncate transition-colors {isMissing
+                ? 'text-red-400 line-through'
+                : isCurrentTrack
+                  ? 'text-[#1db954]'
+                  : 'text-white group-hover:text-[#1db954]'}"
+            >
               {track.name}
             </p>
             <p class="text-xs text-white/40">
               {#if isMissing}
-                <span class="text-red-400">{$t("playlists.fileMissing")}</span> •
-                <button class="text-red-400 hover:text-red-300 underline" onclick={() => handleRemoveTrack(track.hash)}>{$t("playlists.remove")}</button>
+                <span class="text-red-400">{$t("playlists.fileMissing")}</span>
+                •
+                <button
+                  class="text-red-400 hover:text-red-300 underline"
+                  onclick={() => handleRemoveTrack(track.hash)}
+                  >{$t("playlists.remove")}</button
+                >
               {:else}
-                {track.bpm || 120} BPM • {#if (track.note_density || 0) < 3}{$t("library.easy")}{:else if (track.note_density || 0) < 6}{$t("library.medium")}{:else if (track.note_density || 0) < 10}{$t("library.hard")}{:else}{$t("library.expert")}{/if}
+                {track.bpm || 120} BPM • {#if (track.note_density || 0) < 3}{$t(
+                    "library.easy",
+                  )}{:else if (track.note_density || 0) < 6}{$t(
+                    "library.medium",
+                  )}{:else if (track.note_density || 0) < 10}{$t(
+                    "library.hard",
+                  )}{:else}{$t("library.expert")}{/if}
               {/if}
             </p>
           </div>
@@ -474,16 +605,19 @@
     </div>
 
     {#if trackItems.length === 0 && selectedPlaylist.tracks.length > 0 && searchQuery}
-      <div class="flex-1 flex flex-col items-center justify-center text-white/40 py-12">
+      <div
+        class="flex-1 flex flex-col items-center justify-center text-white/40 py-12"
+      >
         <Icon icon="mdi:magnify" class="w-10 h-10 opacity-50 mb-4" />
-        <p class="text-sm">{$t("common.noResults", { values: { query: searchQuery } })}</p>
+        <p class="text-sm">
+          {$t("common.noResults", { values: { query: searchQuery } })}
+        </p>
       </div>
     {:else if selectedPlaylist.tracks.length === 0}
-      <div class="flex-1 flex flex-col items-center justify-center text-white/40 py-12">
-        <Icon
-          icon="mdi:music-note-plus"
-          class="w-12 h-12 mb-4 opacity-50"
-        />
+      <div
+        class="flex-1 flex flex-col items-center justify-center text-white/40 py-12"
+      >
+        <Icon icon="mdi:music-note-plus" class="w-12 h-12 mb-4 opacity-50" />
         <p class="text-sm">{$t("playlists.emptyPlaylist")}</p>
         <p class="text-xs mt-1">{$t("playlists.addSongsFromLibrary")}</p>
       </div>
@@ -504,7 +638,8 @@
         <div>
           <h2 class="text-2xl font-bold">{$t("playlists.title")}</h2>
           <p class="text-sm text-white/60">
-            {$savedPlaylists.length} {$t("playlists.title").toLowerCase()}
+            {$savedPlaylists.length}
+            {$t("playlists.title").toLowerCase()}
           </p>
         </div>
         <div class="flex items-center gap-2">
@@ -514,7 +649,10 @@
             disabled={isImporting}
             title={$t("playlists.import")}
           >
-            <Icon icon={isImporting ? "mdi:loading" : "mdi:import"} class="w-4 h-4 {isImporting ? 'animate-spin' : ''}" />
+            <Icon
+              icon={isImporting ? "mdi:loading" : "mdi:import"}
+              class="w-4 h-4 {isImporting ? 'animate-spin' : ''}"
+            />
             {$t("playlists.import")}
           </button>
           <button
@@ -533,7 +671,13 @@
       <div
         bind:this={scrollContainer}
         onscroll={handleScroll}
-        class="flex-1 overflow-y-auto {showTopMask && showBottomMask ? 'scroll-mask-both' : showTopMask ? 'scroll-mask-top' : showBottomMask ? 'scroll-mask-bottom' : ''}"
+        class="flex-1 overflow-y-auto {showTopMask && showBottomMask
+          ? 'scroll-mask-both'
+          : showTopMask
+            ? 'scroll-mask-top'
+            : showBottomMask
+              ? 'scroll-mask-bottom'
+              : ''}"
         use:dndzone={{
           items,
           flipDurationMs,
@@ -557,7 +701,10 @@
               <div
                 class="w-12 h-12 rounded bg-white/10 flex items-center justify-center flex-shrink-0"
               >
-                <Icon icon="mdi:playlist-music" class="w-6 h-6 text-[#1db954]" />
+                <Icon
+                  icon="mdi:playlist-music"
+                  class="w-6 h-6 text-[#1db954]"
+                />
               </div>
 
               <!-- Playlist Info -->
@@ -576,12 +723,15 @@
                     autofocus
                   />
                 {:else}
-                  <p class="font-semibold text-white truncate hover:text-[#1db954] transition-colors">
+                  <p
+                    class="font-semibold text-white truncate hover:text-[#1db954] transition-colors"
+                  >
                     {playlist.name}
                   </p>
                 {/if}
                 <p class="text-xs text-white/50">
-                  {playlist.tracks.length} {$t("library.songs")}
+                  {playlist.tracks.length}
+                  {$t("library.songs")}
                 </p>
               </div>
 
@@ -608,7 +758,10 @@
                   disabled={playlist.tracks.length === 0 || isExporting}
                   title={$t("playlists.exportPlaylist")}
                 >
-                  <Icon icon={isExporting ? "mdi:loading" : "mdi:export"} class="w-4 h-4 {isExporting ? 'animate-spin' : ''}" />
+                  <Icon
+                    icon={isExporting ? "mdi:loading" : "mdi:export"}
+                    class="w-4 h-4 {isExporting ? 'animate-spin' : ''}"
+                  />
                 </button>
                 <button
                   class="p-2 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-all"
@@ -652,7 +805,9 @@
         >
           <Icon icon="mdi:playlist-plus" class="w-10 h-10 opacity-50" />
         </div>
-        <p class="text-lg font-semibold mb-2 text-white/60">{$t("playlists.noPlaylists")}</p>
+        <p class="text-lg font-semibold mb-2 text-white/60">
+          {$t("playlists.noPlaylists")}
+        </p>
         <p class="text-sm mb-4">{$t("playlists.createToOrganize")}</p>
         <button
           class="spotify-button spotify-button--primary flex items-center gap-2"
@@ -675,7 +830,10 @@
     <!-- Backdrop -->
     <button
       class="absolute inset-0 bg-black/60"
-      onclick={() => { showCreateModal = false; newPlaylistName = ""; }}
+      onclick={() => {
+        showCreateModal = false;
+        newPlaylistName = "";
+      }}
     ></button>
 
     <!-- Modal -->
@@ -684,11 +842,16 @@
       transition:fly={{ y: 20, duration: 200 }}
     >
       <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b border-white/10">
+      <div
+        class="flex items-center justify-between p-4 border-b border-white/10"
+      >
         <h3 class="text-lg font-bold">{$t("playlists.createPlaylist")}</h3>
         <button
           class="p-1 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-          onclick={() => { showCreateModal = false; newPlaylistName = ""; }}
+          onclick={() => {
+            showCreateModal = false;
+            newPlaylistName = "";
+          }}
         >
           <Icon icon="mdi:close" class="w-5 h-5" />
         </button>
@@ -698,7 +861,9 @@
       <div class="p-4 space-y-4">
         <!-- Name Input -->
         <div>
-          <label class="block text-sm font-medium text-white/70 mb-2">{$t("playlists.playlistName")}</label>
+          <label class="block text-sm font-medium text-white/70 mb-2"
+            >{$t("playlists.playlistName")}</label
+          >
           <input
             type="text"
             placeholder={$t("playlists.myPlaylist")}
@@ -713,7 +878,10 @@
         <div class="flex gap-2 justify-end pt-2">
           <button
             class="px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-sm transition-colors"
-            onclick={() => { showCreateModal = false; newPlaylistName = ""; }}
+            onclick={() => {
+              showCreateModal = false;
+              newPlaylistName = "";
+            }}
           >
             {$t("common.cancel")}
           </button>
@@ -737,9 +905,7 @@
     transition:fade={{ duration: 150 }}
   >
     <!-- Backdrop -->
-    <button
-      class="absolute inset-0 bg-black/60"
-      onclick={cancelDelete}
+    <button class="absolute inset-0 bg-black/60" onclick={cancelDelete}
     ></button>
 
     <!-- Modal -->
@@ -748,7 +914,9 @@
       transition:fly={{ y: 20, duration: 200 }}
     >
       <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b border-white/10">
+      <div
+        class="flex items-center justify-between p-4 border-b border-white/10"
+      >
         <h3 class="text-lg font-bold">{$t("playlists.deletePlaylist")}</h3>
         <button
           class="p-1 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
@@ -762,12 +930,19 @@
       <div class="p-4 space-y-4">
         <!-- Warning Icon -->
         <div class="flex items-center gap-4">
-          <div class="w-16 h-16 rounded-xl bg-red-500/10 flex items-center justify-center">
+          <div
+            class="w-16 h-16 rounded-xl bg-red-500/10 flex items-center justify-center"
+          >
             <Icon icon="mdi:delete-alert" class="w-8 h-8 text-red-400" />
           </div>
           <div class="text-left">
-            <p class="font-semibold text-white">{$savedPlaylists.find(p => p.id === deleteConfirmId)?.name || 'Playlist'}</p>
-            <p class="text-sm text-white/50">{$t("playlists.cannotBeUndone")}</p>
+            <p class="font-semibold text-white">
+              {$savedPlaylists.find((p) => p.id === deleteConfirmId)?.name ||
+                "Playlist"}
+            </p>
+            <p class="text-sm text-white/50">
+              {$t("playlists.cannotBeUndone")}
+            </p>
           </div>
         </div>
 
@@ -791,7 +966,6 @@
   </div>
 {/if}
 
-<svelte:window onclick={() => contextMenu = null} />
+<svelte:window onclick={() => (contextMenu = null)} />
 
-<SongContextMenu {contextMenu} onClose={() => contextMenu = null} />
-
+<SongContextMenu {contextMenu} onClose={() => (contextMenu = null)} />

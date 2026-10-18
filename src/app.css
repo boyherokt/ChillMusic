@@ -6,16 +6,19 @@
   :root {
     color-scheme: dark;
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-    /* background-color: #000000; */
     --spotify-green: #1db954;
-    --spotify-dark: #121212;
-    --spotify-darker: #0a0a0a;
-    --spotify-gray: #181818;
+    --spotify-dark: rgba(12, 12, 12, 0.88);
+    --spotify-darker: rgba(7, 7, 7, 0.92);
+    --spotify-gray: rgba(16, 16, 16, 0.92);
+    --glass-border: rgba(255, 255, 255, 0.08);
   }
 
   body {
-    @apply min-h-screen bg-black text-white antialiased;
+    background-color: transparent;
+    color: #ffffff;
+    min-height: 100vh;
     margin: 0;
+    -webkit-font-smoothing: antialiased;
   }
 
   ::selection {
@@ -24,7 +27,7 @@
   }
 
   #app {
-    @apply min-h-screen;
+    @apply min-h-screen bg-transparent;
   }
 
   /* Custom scrollbar */
@@ -49,15 +52,29 @@
 @layer components {
   .spotify-sidebar {
     background-color: var(--spotify-darker);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
   }
 
   .spotify-main {
     background-color: var(--spotify-dark);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 
   .spotify-player {
     background-color: var(--spotify-gray);
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-top: 1px solid var(--glass-border);
+  }
+
+  /* Pure neutral dark frosted glass for dropdowns, popups and modals */
+  .bg-\[\#282828\] {
+    background-color: rgba(22, 22, 22, 0.95) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 
   .drag-handle {
@@ -71,12 +88,24 @@
   }
 
   .spotify-card {
-    @apply bg-[#181818] rounded-lg p-4 transition-all duration-200 hover:bg-[#282828] cursor-pointer;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
     outline: none;
   }
 
+  .spotify-card:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.10);
+  }
+
   .spotify-card--active {
-    @apply bg-[#282828] ring-1 ring-white/10;
+    background-color: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.10);
   }
 
   .spotify-list-item {

@@ -1,6 +1,6 @@
 [package]
-name = "wwm-overlay"
-version = "0.1.0"
+name = "chill-music"
+version = "1.2.1"
 description = "MIDI Player Overlay for Black Desert"
 authors = ["you"]
 edition = "2021"
@@ -36,7 +36,7 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [[bin]]
-name = "wwm-overlay"
+name = "chill-music"
 path = "src/main.rs"
 
 [profile.release]

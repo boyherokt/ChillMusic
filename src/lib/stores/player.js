@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import { invoke } from '../tauri/core-proxy.js';
+import { invoke, isTauri } from '../tauri/core-proxy.js';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { calculateProgress } from '../utils/playerStats.js';
@@ -43,6 +43,19 @@ export const totalMidiCount = writable(0); // Total files in album folder
 export const hasMoreFiles = writable(false); // Whether there are more files to load
 export const playlist = writable([]);
 
+// Playback Context state (Spotify-like context: library, playlist, favorites)
+export const playbackContext = writable({
+  source: 'library',
+  name: 'Library',
+  id: null,
+  tracks: [],
+  index: -1,
+});
+
+// Shuffled sequence for current context
+export const shuffleIndices = writable([]);
+export const shufflePosition = writable(0);
+
 // Library play mode - play directly from library without queue
 export const libraryPlayMode = writable(false);
 export const libraryPlayIndex = writable(-1); // Current index in filtered library
@@ -53,6 +66,9 @@ export const libraryShuffleOrder = writable([]); // Shuffled indices for shuffle
 const LARGE_LIBRARY_THRESHOLD = 5000;
 const LOAD_BATCH_SIZE = 2000;
 export const currentIndex = writable(0);
+export const libraryScrollTop = writable(0);
+export const queueScrollTop = writable(0);
+export const librarySortBy = writable("date-desc");
 
 // Multiple playlists support
 export const savedPlaylists = writable([]);
@@ -585,14 +601,18 @@ export async function loadPlaylistToQueue(playlistId, autoPlay = true) {
   const lists = get(savedPlaylists);
   const targetPlaylist = lists.find(p => p.id === playlistId);
   if (targetPlaylist && targetPlaylist.tracks.length > 0) {
-    playlist.set([...targetPlaylist.tracks]);
-    currentIndex.set(0);
     activePlaylistId.set(playlistId);
     localStorage.setItem(STORAGE_KEYS.ACTIVE_PLAYLIST, playlistId);
 
-    // Auto-play first track
     if (autoPlay) {
-      await playMidi(targetPlaylist.tracks[0].path);
+      await playFromContext({
+        source: 'playlist',
+        id: playlistId,
+        name: targetPlaylist.name,
+        tracks: targetPlaylist.tracks,
+        index: 0,
+        shuffle: get(shuffleMode),
+      });
     }
   }
 }
@@ -607,8 +627,12 @@ export { formatTime } from '../utils/playerStats.js';
 
 // Check library size and cache status
 export async function getLibraryInfo() {
+  if (!isTauri) {
+    return { total_files: 0, cached_files: 0, is_mostly_cached: true };
+  }
   try {
     const info = await invoke('get_library_info');
+    if (!info) return { total_files: 0, cached_files: 0, is_mostly_cached: true };
     totalMidiCount.set(info.total_files);
     return info;
   } catch (error) {
@@ -659,6 +683,10 @@ export async function loadMidiFiles(limit = 0, append = false) {
 
     // Set up progress listener - returns a promise that resolves when done
     await new Promise(async (resolve) => {
+      if (!isTauri) {
+        resolve();
+        return;
+      }
       const unlisten = await listen('midi-load-progress', (event) => {
         const { loaded, total, files: newFiles, done } = event.payload;
 
@@ -810,7 +838,7 @@ export async function setSelectedTrack(trackId) {
 export const missingFiles = writable(new Set());
 
 // Play a MIDI file
-export async function playMidi(path) {
+export async function playMidi(path, options = {}) {
   const actionContext = { path };
   logUiAction('playMidi', 'started', actionContext);
   try {
@@ -850,6 +878,18 @@ export async function playMidi(path) {
     const playingIndex = $playlist.findIndex(f => f.path === path);
     if (playingIndex !== -1) {
       currentIndex.set(playingIndex);
+    }
+
+    // Also update context index if applicable (only if not an interrupting queued track)
+    if (!options.isQueueTrack) {
+      const ctx = get(playbackContext);
+      if (ctx && ctx.tracks && ctx.tracks.length > 0) {
+        const ctxIdx = ctx.tracks.findIndex(t => t.path === path);
+        if (ctxIdx !== -1) {
+          playbackContext.update(c => ({ ...c, index: ctxIdx }));
+          libraryPlayIndex.set(ctxIdx);
+        }
+      }
     }
 
     // Track stats
@@ -909,8 +949,37 @@ export async function playMidiBand(file, options = {}) {
 }
 
 // Pause/Resume playback
+let lastPauseResumeTime = 0;
 export async function pauseResume() {
+  // Local debounce for UI-triggered calls
+  const now = Date.now();
+  if (now - lastPauseResumeTime < 150) return;
+  lastPauseResumeTime = now;
+
   try {
+    const status = await invoke('get_playback_status');
+
+    // If not playing at all, try to start playing
+    if (!status.is_playing) {
+      const $currentFile = get(currentFile);
+      if ($currentFile) {
+        await playMidi($currentFile);
+      } else {
+        const $playlist = get(playlist);
+        if ($playlist.length > 0) {
+          await playMidi($playlist[0].path);
+        } else {
+          const ctx = get(playbackContext);
+          if (ctx && ctx.tracks && ctx.tracks.length > 0) {
+            const idx = ctx.index >= 0 ? ctx.index : 0;
+            await playMidi(ctx.tracks[idx].path);
+          }
+        }
+      }
+      return;
+    }
+
+    // Otherwise standard toggle
     const state = await invoke('pause_resume');
     isPaused.set(state.is_paused);
     isPlaying.set(state.is_playing);
@@ -946,8 +1015,9 @@ export async function toggleLoop() {
   const newLoopMode = !get(loopMode);
   loopMode.set(newLoopMode);
 
+  // Backend should not freeze-loop a single track so that playlist progression / repeat works smoothly
   try {
-    await invoke('set_loop_mode', { enabled: newLoopMode });
+    await invoke('set_loop_mode', { enabled: false });
     delaySmartPause();
   } catch (error) {
     console.error('Failed to set loop mode:', error);
@@ -956,7 +1026,25 @@ export async function toggleLoop() {
 
 // Toggle shuffle mode
 export function toggleShuffle() {
-  shuffleMode.update(v => !v);
+  const newShuffle = !get(shuffleMode);
+  shuffleMode.set(newShuffle);
+
+  const ctx = get(playbackContext);
+  if (newShuffle) {
+    if (ctx && ctx.tracks && ctx.tracks.length > 0) {
+      const curIdx = ctx.index >= 0 ? ctx.index : 0;
+      const shuffled = generateShuffleIndices(ctx.tracks.length, curIdx);
+      shuffleIndices.set(shuffled);
+      shufflePosition.set(0);
+      libraryShuffleOrder.set(shuffled);
+      libraryPlayShuffle.set(true);
+    }
+  } else {
+    shuffleIndices.set([]);
+    shufflePosition.set(0);
+    libraryShuffleOrder.set([]);
+    libraryPlayShuffle.set(false);
+  }
 }
 
 // Seek to a specific position (in seconds)
@@ -1068,46 +1156,101 @@ export async function testAllKeys36() {
   }
 }
 
-// ============ Library Play Mode Functions ============
+// ============ Spotify-Style Context & Playback Functions ============
 
-// Start playing from library (no queue needed)
-export async function playAllLibrary(files, startIndex = 0, shuffle = false) {
-  if (!files || files.length === 0) return;
-
-  libraryPlayMode.set(true);
-  libraryPlayShuffle.set(shuffle);
-
-  if (shuffle) {
-    // Create shuffled order of indices
-    const indices = Array.from({ length: files.length }, (_, i) => i);
-    // Fisher-Yates shuffle
-    for (let i = indices.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [indices[i], indices[j]] = [indices[j], indices[i]];
+// Generate a non-repeating Fisher-Yates shuffled list of track indices
+export function generateShuffleIndices(length, currentIdx = -1) {
+  if (length <= 0) return [];
+  const indices = Array.from({ length }, (_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  // Move current track to front so it won't repeat until end of cycle
+  if (currentIdx >= 0 && currentIdx < length) {
+    const pos = indices.indexOf(currentIdx);
+    if (pos > -1) {
+      indices.splice(pos, 1);
+      indices.unshift(currentIdx);
     }
-    // Move startIndex to front if specified
-    if (startIndex > 0) {
-      const pos = indices.indexOf(startIndex);
-      if (pos > 0) {
-        indices.splice(pos, 1);
-        indices.unshift(startIndex);
-      }
-    }
-    libraryShuffleOrder.set(indices);
-    libraryPlayIndex.set(0);
-  } else {
-    libraryShuffleOrder.set([]);
-    libraryPlayIndex.set(startIndex);
+  }
+  return indices;
+}
+
+// Play a track within a specified Context (Library, Saved Playlist, Favorites)
+export async function playFromContext({
+  source = 'library',
+  name = '',
+  id = null,
+  tracks = [],
+  index = 0,
+  file = null,
+  shuffle = null,
+} = {}) {
+  if (!tracks || tracks.length === 0) return;
+
+  // Determine starting index
+  let targetIndex = index;
+  if (file) {
+    const foundIdx = tracks.findIndex(t => t.path === file.path || t.hash === file.hash);
+    if (foundIdx !== -1) targetIndex = foundIdx;
   }
 
-  // Play the first song
-  const actualIndex = shuffle ? get(libraryShuffleOrder)[0] : startIndex;
-  const file = files[actualIndex];
-  if (file) {
+  const isShuffle = shuffle !== null ? shuffle : get(shuffleMode);
+  if (shuffle !== null) {
+    shuffleMode.set(shuffle);
+  }
+
+  if (targetIndex < 0 || targetIndex >= tracks.length) {
+    targetIndex = isShuffle && tracks.length > 1 ? Math.floor(Math.random() * tracks.length) : 0;
+  }
+
+  // Update playback context
+  playbackContext.set({
+    source,
+    name: name || (source === 'library' ? 'Library' : source),
+    id,
+    tracks,
+    index: targetIndex,
+  });
+
+  // Keep legacy libraryPlayMode stores in sync for any dependent views
+  libraryPlayMode.set(source === 'library');
+  libraryPlayIndex.set(targetIndex);
+  libraryPlayShuffle.set(isShuffle);
+
+  if (isShuffle) {
+    const shuffled = generateShuffleIndices(tracks.length, targetIndex);
+    shuffleIndices.set(shuffled);
+    shufflePosition.set(0);
+    libraryShuffleOrder.set(shuffled);
+  } else {
+    shuffleIndices.set([]);
+    shufflePosition.set(0);
+    libraryShuffleOrder.set([]);
+  }
+
+  const trackToPlay = tracks[targetIndex];
+  if (trackToPlay && trackToPlay.path) {
     currentPosition.set(0);
     totalDuration.set(0);
-    await playMidi(file.path);
+    await playMidi(trackToPlay.path);
   }
+}
+
+// Start playing from library (compat wrapper for playFromContext)
+export async function playAllLibrary(files, startIndex = 0, shuffle = false) {
+  let idx = startIndex;
+  if (shuffle && files && files.length > 1) {
+    idx = Math.floor(Math.random() * files.length);
+  }
+  await playFromContext({
+    source: 'library',
+    name: 'Library',
+    tracks: files,
+    index: idx,
+    shuffle,
+  });
 }
 
 // Exit library play mode
@@ -1117,161 +1260,145 @@ export function exitLibraryPlayMode() {
   libraryShuffleOrder.set([]);
 }
 
-// Play next in library mode (called internally)
-async function playNextLibrary(files) {
-  const $shuffle = get(libraryPlayShuffle);
-  let $index = get(libraryPlayIndex);
-  const $shuffleOrder = get(libraryShuffleOrder);
-  const $loopMode = get(loopMode);
-
-  let nextIndex;
-  if ($shuffle) {
-    nextIndex = $index + 1;
-    if (nextIndex >= $shuffleOrder.length) {
-      if ($loopMode) {
-        nextIndex = 0; // Loop back
-      } else {
-        exitLibraryPlayMode();
-        return;
-      }
-    }
-    libraryPlayIndex.set(nextIndex);
-    const actualIndex = $shuffleOrder[nextIndex];
-    if (files[actualIndex]) {
-      currentPosition.set(0);
-      totalDuration.set(0);
-      await playMidi(files[actualIndex].path);
-    }
-  } else {
-    nextIndex = $index + 1;
-    if (nextIndex >= files.length) {
-      if ($loopMode) {
-        nextIndex = 0; // Loop back
-      } else {
-        exitLibraryPlayMode();
-        return;
-      }
-    }
-    libraryPlayIndex.set(nextIndex);
-    if (files[nextIndex]) {
-      currentPosition.set(0);
-      totalDuration.set(0);
-      await playMidi(files[nextIndex].path);
-    }
-  }
-}
-
-// Play previous in library mode (called internally)
-async function playPreviousLibrary(files) {
-  const $shuffle = get(libraryPlayShuffle);
-  let $index = get(libraryPlayIndex);
-  const $shuffleOrder = get(libraryShuffleOrder);
-
-  let prevIndex;
-  if ($shuffle) {
-    prevIndex = $index - 1;
-    if (prevIndex < 0) prevIndex = $shuffleOrder.length - 1;
-    libraryPlayIndex.set(prevIndex);
-    const actualIndex = $shuffleOrder[prevIndex];
-    if (files[actualIndex]) {
-      currentPosition.set(0);
-      totalDuration.set(0);
-      await playMidi(files[actualIndex].path);
-    }
-  } else {
-    prevIndex = $index - 1;
-    if (prevIndex < 0) prevIndex = files.length - 1;
-    libraryPlayIndex.set(prevIndex);
-    if (files[prevIndex]) {
-      currentPosition.set(0);
-      totalDuration.set(0);
-      await playMidi(files[prevIndex].path);
-    }
-  }
-}
-
-// ============ Playlist Functions ============
-
-// Play next in playlist
+// Play next track (User Queue takes priority, then active Context)
 export async function playNext() {
-  // Check if in library play mode
-  if (get(libraryPlayMode)) {
-    const files = get(midiFiles);
-    await playNextLibrary(files);
+  // 1. Priority: User Queue (Hàng chờ do người dùng thêm vào qua Add to Queue)
+  const $userQueue = get(playlist);
+  if ($userQueue.length > 0) {
+    const nextQueuedTrack = $userQueue[0];
+    // Remove the played track from queue
+    playlist.update(q => q.slice(1));
+    currentPosition.set(0);
+    totalDuration.set(0);
+    await playMidi(nextQueuedTrack.path, { isQueueTrack: true });
     return;
   }
 
-  const $playlist = get(playlist);
-  const $currentFile = get(currentFile);
-  const $shuffleMode = get(shuffleMode);
-
-  if ($playlist.length === 0) return;
-
-  // Find current index based on playing file (more reliable than stored index)
-  let $currentIndex = $playlist.findIndex(f => f.path === $currentFile);
-  if ($currentIndex === -1) $currentIndex = get(currentIndex);
-
-  // Clamp to valid range
-  $currentIndex = Math.max(0, Math.min($currentIndex, $playlist.length - 1));
-
-  let nextIndex;
-  if ($shuffleMode && $playlist.length > 1) {
-    // Pick a random index different from current
-    do {
-      nextIndex = Math.floor(Math.random() * $playlist.length);
-    } while (nextIndex === $currentIndex);
-  } else {
-    nextIndex = ($currentIndex + 1) % $playlist.length;
+  // 2. Play next in active Context
+  const ctx = get(playbackContext);
+  if (!ctx || !ctx.tracks || ctx.tracks.length === 0) {
+    const files = get(midiFiles);
+    if (files.length > 0) {
+      await playFromContext({ source: 'library', tracks: files, index: 0 });
+    } else {
+      isPlaying.set(false);
+      currentPosition.set(0);
+    }
+    return;
   }
 
-  // Reset position immediately before starting new track
-  currentPosition.set(0);
-  totalDuration.set(0);
+  const $shuffle = get(shuffleMode);
+  const $loop = get(loopMode);
+  let nextTrackIndex = -1;
 
-  await playMidi($playlist[nextIndex].path);
+  if ($shuffle) {
+    let $shuffleOrder = get(shuffleIndices);
+    let $pos = get(shufflePosition) + 1;
+
+    if (!$shuffleOrder || $shuffleOrder.length !== ctx.tracks.length) {
+      $shuffleOrder = generateShuffleIndices(ctx.tracks.length, ctx.index);
+      shuffleIndices.set($shuffleOrder);
+      $pos = 1;
+    }
+
+    if ($pos < $shuffleOrder.length) {
+      shufflePosition.set($pos);
+      nextTrackIndex = $shuffleOrder[$pos];
+    } else if ($loop) {
+      // Loop: Reshuffle and start from beginning
+      const newShuffled = generateShuffleIndices(ctx.tracks.length, -1);
+      shuffleIndices.set(newShuffled);
+      shufflePosition.set(0);
+      nextTrackIndex = newShuffled[0];
+    } else {
+      // End of shuffled playlist - stop playback
+      isPlaying.set(false);
+      currentPosition.set(0);
+      return;
+    }
+  } else {
+    // Normal sequential progression
+    let nextIdx = ctx.index + 1;
+    if (nextIdx < ctx.tracks.length) {
+      nextTrackIndex = nextIdx;
+    } else if ($loop) {
+      // Loop enabled: wrap to beginning
+      nextTrackIndex = 0;
+    } else {
+      // End of playlist: STOP (Do NOT loop back to track 1!)
+      isPlaying.set(false);
+      currentPosition.set(0);
+      return;
+    }
+  }
+
+  if (nextTrackIndex >= 0 && ctx.tracks[nextTrackIndex]) {
+    playbackContext.update(c => ({ ...c, index: nextTrackIndex }));
+    libraryPlayIndex.set(nextTrackIndex);
+    currentPosition.set(0);
+    totalDuration.set(0);
+    await playMidi(ctx.tracks[nextTrackIndex].path);
+  }
 }
 
-// Play previous in playlist
+// Play previous track
 export async function playPrevious() {
-  // Check if in library play mode
-  if (get(libraryPlayMode)) {
-    const files = get(midiFiles);
-    await playPreviousLibrary(files);
+  const curPos = get(currentPosition);
+  // If track has been playing for more than 3 seconds, restart current track (Spotify standard)
+  if (curPos > 3) {
+    await seekTo(0);
     return;
   }
 
-  const $playlist = get(playlist);
-  const $currentFile = get(currentFile);
+  const ctx = get(playbackContext);
+  if (!ctx || !ctx.tracks || ctx.tracks.length === 0) return;
 
-  if ($playlist.length === 0) return;
+  const $shuffle = get(shuffleMode);
+  const $loop = get(loopMode);
+  let prevTrackIndex = -1;
 
-  // Find current index based on playing file (more reliable than stored index)
-  let $currentIndex = $playlist.findIndex(f => f.path === $currentFile);
-  if ($currentIndex === -1) $currentIndex = get(currentIndex);
+  if ($shuffle) {
+    let $pos = get(shufflePosition) - 1;
+    const $shuffleOrder = get(shuffleIndices);
+    if ($pos >= 0 && $shuffleOrder && $shuffleOrder.length > 0) {
+      shufflePosition.set($pos);
+      prevTrackIndex = $shuffleOrder[$pos];
+    } else if ($loop && $shuffleOrder && $shuffleOrder.length > 0) {
+      $pos = $shuffleOrder.length - 1;
+      shufflePosition.set($pos);
+      prevTrackIndex = $shuffleOrder[$pos];
+    } else {
+      prevTrackIndex = 0;
+    }
+  } else {
+    let prevIdx = ctx.index - 1;
+    if (prevIdx >= 0) {
+      prevTrackIndex = prevIdx;
+    } else if ($loop) {
+      prevTrackIndex = ctx.tracks.length - 1;
+    } else {
+      prevTrackIndex = 0;
+    }
+  }
 
-  // Clamp to valid range
-  $currentIndex = Math.max(0, Math.min($currentIndex, $playlist.length - 1));
-
-  const prevIndex = ($currentIndex - 1 + $playlist.length) % $playlist.length;
-
-  // Reset position immediately before starting new track
-  currentPosition.set(0);
-  totalDuration.set(0);
-
-  await playMidi($playlist[prevIndex].path);
+  if (prevTrackIndex >= 0 && ctx.tracks[prevTrackIndex]) {
+    playbackContext.update(c => ({ ...c, index: prevTrackIndex }));
+    libraryPlayIndex.set(prevTrackIndex);
+    currentPosition.set(0);
+    totalDuration.set(0);
+    await playMidi(ctx.tracks[prevTrackIndex].path);
+  }
 }
 
 // Add to queue and optionally play
 export function addToQueue(file, playNow = false) {
   playlist.update(list => {
     // Allow duplicates in queue (unlike library playlists)
-    const newList = [...list, file];
-    if (playNow && list.length === 0) {
-      // If queue was empty, play the first item
-      setTimeout(() => playMidi(file.path), 0);
-    }
-    return newList;
+    return [...list, file];
   });
+  if (playNow) {
+    setTimeout(() => playMidi(file.path), 0);
+  }
 }
 
 // Reorder queue
@@ -1319,27 +1446,7 @@ export function initializeListeners() {
 
   // Listen for playback ended
   listen('playback-ended', async () => {
-    const $playlist = get(playlist);
-    const $loopMode = get(loopMode);
-    const $libraryMode = get(libraryPlayMode);
-
-    // Library mode takes priority
-    if ($libraryMode) {
-      await playNext(); // playNext handles library mode internally
-      return;
-    }
-
-    if ($loopMode && $playlist.length === 1) {
-      // Restart the same song
-      await playMidi(get(currentFile));
-    } else if ($playlist.length > 1) {
-      // Play next in playlist
-      await playNext();
-    } else {
-      // Stop playback
-      isPlaying.set(false);
-      currentPosition.set(0);
-    }
+    await playNext();
   });
 
   // Check game focus periodically for smart pause
@@ -1384,11 +1491,12 @@ async function focusGameWindow() {
 async function refreshPlaybackState() {
   try {
     const state = await invoke('get_playback_status');
-    isPlaying.set(state.is_playing);
-    isPaused.set(state.is_paused);
-    loopMode.set(state.loop_mode);
-    currentPosition.set(state.current_position);
-    totalDuration.set(state.total_duration);
+    if (!state) return;
+    if (typeof state.is_playing === 'boolean') isPlaying.set(state.is_playing);
+    if (typeof state.is_paused === 'boolean') isPaused.set(state.is_paused);
+    if (typeof state.loop_mode === 'boolean') loopMode.set(state.loop_mode);
+    if (typeof state.current_position === 'number') currentPosition.set(state.current_position);
+    if (typeof state.total_duration === 'number') totalDuration.set(state.total_duration);
     if (state.current_file) {
       currentFile.set(state.current_file);
     }

@@ -17,6 +17,7 @@
     smartPause,
     loadMidiFiles,
   } from "../stores/player.js";
+  import { searchMatch } from "../utils/stringUtils.js";
 
   let scrollContainer;
   let showTopMask = false;
@@ -44,7 +45,7 @@
   let noteKeys = {
     low: ["z", "x", "c", "v", "b", "n", "m"],
     mid: ["a", "s", "d", "f", "g", "h", "j"],
-    high: ["q", "w", "e", "r", "t", "y", "u"]
+    high: ["q", "w", "e", "r", "t", "y", "u"],
   };
   let recordingNoteKey = null; // { octave: "low"|"mid"|"high", index: 0-6 }
 
@@ -55,35 +56,36 @@
       desc: "US/International layout",
       low: ["z", "x", "c", "v", "b", "n", "m"],
       mid: ["a", "s", "d", "f", "g", "h", "j"],
-      high: ["q", "w", "e", "r", "t", "y", "u"]
+      high: ["q", "w", "e", "r", "t", "y", "u"],
     },
     qwertz: {
       name: "QWERTZ",
       desc: "German/Austrian layout",
       low: ["y", "x", "c", "v", "b", "n", "m"],
       mid: ["a", "s", "d", "f", "g", "h", "j"],
-      high: ["q", "w", "e", "r", "t", "z", "u"]
+      high: ["q", "w", "e", "r", "t", "z", "u"],
     },
     azerty: {
       name: "AZERTY",
       desc: "French layout",
       low: ["w", "x", "c", "v", "b", "n", ","],
       mid: ["q", "s", "d", "f", "g", "h", "j"],
-      high: ["a", "z", "e", "r", "t", "y", "u"]
-    }
+      high: ["a", "z", "e", "r", "t", "y", "u"],
+    },
   };
   let showPresetModal = false;
   let pendingPreset = null;
 
   // Reactive: which preset is currently active (inline check for proper reactivity)
-  $: activePreset = Object.keys(KEY_PRESETS).find(key => {
-    const preset = KEY_PRESETS[key];
-    return (
-      noteKeys.low.join(',') === preset.low.join(',') &&
-      noteKeys.mid.join(',') === preset.mid.join(',') &&
-      noteKeys.high.join(',') === preset.high.join(',')
-    );
-  }) || null;
+  $: activePreset =
+    Object.keys(KEY_PRESETS).find((key) => {
+      const preset = KEY_PRESETS[key];
+      return (
+        noteKeys.low.join(",") === preset.low.join(",") &&
+        noteKeys.mid.join(",") === preset.mid.join(",") &&
+        noteKeys.high.join(",") === preset.high.join(",")
+      );
+    }) || null;
   let isChangingPath = false;
   let customWindowKeywords = [];
   let newKeyword = "";
@@ -97,7 +99,7 @@
     next: "F11",
     mode_prev: "[",
     mode_next: "]",
-    toggle_mini: "Insert"
+    toggle_mini: "Insert",
   };
   let recordingKey = null; // Which key we're currently recording
 
@@ -109,35 +111,76 @@
     next: $t("settings.shortcuts.nextTrack"),
     mode_prev: $t("settings.shortcuts.modePrev"),
     mode_next: $t("settings.shortcuts.modeNext"),
-    toggle_mini: $t("settings.shortcuts.miniMode")
+    toggle_mini: $t("settings.shortcuts.miniMode"),
   };
 
   // Settings sections for search/navigation (reactive for i18n)
   $: settingsSections = [
-    { id: "keybindings", label: $t("settings.shortcuts.title"), icon: "mdi:keyboard-settings", keywords: ["keybindings", "shortcuts", "hotkeys", "keys", "bind"] },
-    { id: "window", label: $t("settings.window.title"), icon: "mdi:application-outline", keywords: ["window", "detection", "process", "game"] },
-    { id: "notemode", label: $t("noteMode.title"), icon: "mdi:music-note", keywords: ["note", "mode", "calculation", "mapping"] },
-    { id: "keystyle", label: $t("settings.keyStyle.title"), icon: "mdi:piano", keywords: ["key", "style", "play", "21", "36"] },
-    { id: "keyboard", label: $t("settings.keyboard.title"), icon: "mdi:piano", keywords: ["keyboard", "qwertz", "azerty", "layout", "keys", "notes"] },
-    { id: "cloud", label: $t("settings.playback.cloudMode"), icon: "mdi:cloud", keywords: ["cloud", "gaming", "geforce", "input"] },
-    { id: "storage", label: $t("settings.storage.title"), icon: "mdi:folder", keywords: ["storage", "album", "folder", "path"] },
-    { id: "debug", label: $t("settings.debug.title"), icon: "mdi:bug", keywords: ["debug", "test", "keys", "spam"] },
+    {
+      id: "keybindings",
+      label: $t("settings.shortcuts.title"),
+      icon: "mdi:keyboard-settings",
+      keywords: ["keybindings", "shortcuts", "hotkeys", "keys", "bind"],
+    },
+    {
+      id: "window",
+      label: $t("settings.window.title"),
+      icon: "mdi:application-outline",
+      keywords: ["window", "detection", "process", "game"],
+    },
+    {
+      id: "notemode",
+      label: $t("noteMode.title"),
+      icon: "mdi:music-note",
+      keywords: ["note", "mode", "calculation", "mapping"],
+    },
+    {
+      id: "keystyle",
+      label: $t("settings.keyStyle.title"),
+      icon: "mdi:piano",
+      keywords: ["key", "style", "play", "21", "36"],
+    },
+    {
+      id: "keyboard",
+      label: $t("settings.keyboard.title"),
+      icon: "mdi:piano",
+      keywords: ["keyboard", "qwertz", "azerty", "layout", "keys", "notes"],
+    },
+    {
+      id: "cloud",
+      label: $t("settings.playback.cloudMode"),
+      icon: "mdi:cloud",
+      keywords: ["cloud", "gaming", "geforce", "input"],
+    },
+    {
+      id: "storage",
+      label: $t("settings.storage.title"),
+      icon: "mdi:folder",
+      keywords: ["storage", "album", "folder", "path"],
+    },
+    {
+      id: "debug",
+      label: $t("settings.debug.title"),
+      icon: "mdi:bug",
+      keywords: ["debug", "test", "keys", "spam"],
+    },
   ];
 
   function scrollToSection(id) {
     const element = document.getElementById(`settings-${id}`);
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
     }
     searchQuery = "";
   }
 
   $: filteredSections = settingsSections
-    .filter(s => s.id !== 'debug' || isDev) // Only show debug in dev mode
-    .filter(s => searchQuery
-      ? s.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.keywords.some(k => k.includes(searchQuery.toLowerCase()))
-      : true
+    .filter((s) => s.id !== "debug" || isDev) // Only show debug in dev mode
+    .filter((s) =>
+      searchQuery
+        ? searchMatch(searchQuery, s.label) ||
+          s.keywords.some((k) => searchMatch(searchQuery, k))
+        : true,
     );
 
   import { APP_VERSION, APP_FLAVOR } from "../version.js";
@@ -150,17 +193,17 @@
 
   // Re-enable keybindings when leaving settings (in case user was recording)
   onDestroy(() => {
-    invoke('cmd_set_keybindings_enabled', { enabled: true }).catch(() => {});
+    invoke("cmd_set_keybindings_enabled", { enabled: true }).catch(() => {});
     if (unlistenKeyCapture) unlistenKeyCapture();
   });
 
   onMount(async () => {
     // Listen for key capture events from backend (when app not focused)
-    unlistenKeyCapture = await listen('key-captured', (event) => {
+    unlistenKeyCapture = await listen("key-captured", (event) => {
       const keyName = event.payload;
 
       // Handle escape for both recording modes
-      if (keyName === 'Escape') {
+      if (keyName === "Escape") {
         if (recordingKey) stopRecording();
         if (recordingNoteKey) stopRecordingNoteKey();
         return;
@@ -189,15 +232,19 @@
 
     // Load cloud mode
     try {
-      cloudMode = await invoke('get_cloud_mode');
+      cloudMode = await invoke("get_cloud_mode");
     } catch (e) {
       console.error("Failed to get cloud mode:", e);
     }
 
     // Load note key bindings
     try {
-      const keys = await invoke('get_note_keys');
-      if (keys.low?.length === 7 && keys.mid?.length === 7 && keys.high?.length === 7) {
+      const keys = await invoke("get_note_keys");
+      if (
+        keys.low?.length === 7 &&
+        keys.mid?.length === 7 &&
+        keys.high?.length === 7
+      ) {
         noteKeys = keys;
       }
     } catch (e) {
@@ -206,21 +253,21 @@
 
     // Load album path
     try {
-      albumPath = await invoke('get_album_path');
+      albumPath = await invoke("get_album_path");
     } catch (e) {
       console.error("Failed to get album path:", e);
     }
 
     // Load custom window keywords
     try {
-      customWindowKeywords = await invoke('get_custom_window_keywords');
+      customWindowKeywords = await invoke("get_custom_window_keywords");
     } catch (e) {
       console.error("Failed to get custom window keywords:", e);
     }
 
     // Load keybindings
     try {
-      keybindings = await invoke('cmd_get_keybindings');
+      keybindings = await invoke("cmd_get_keybindings");
     } catch (e) {
       console.error("Failed to get keybindings:", e);
     }
@@ -231,9 +278,11 @@
 
   async function saveKeybindings() {
     try {
-      await invoke('cmd_set_keybindings', { keybindings });
+      await invoke("cmd_set_keybindings", { keybindings });
       // Notify App.svelte to reload keybindings
-      window.dispatchEvent(new CustomEvent('keybindings-changed', { detail: keybindings }));
+      window.dispatchEvent(
+        new CustomEvent("keybindings-changed", { detail: keybindings }),
+      );
     } catch (e) {
       console.error("Failed to save keybindings:", e);
     }
@@ -241,24 +290,26 @@
 
   async function resetKeybindings() {
     try {
-      keybindings = await invoke('cmd_reset_keybindings');
+      keybindings = await invoke("cmd_reset_keybindings");
       // Notify App.svelte to reload keybindings
-      window.dispatchEvent(new CustomEvent('keybindings-changed', { detail: keybindings }));
+      window.dispatchEvent(
+        new CustomEvent("keybindings-changed", { detail: keybindings }),
+      );
     } catch (e) {
       console.error("Failed to reset keybindings:", e);
     }
   }
 
   async function startRecording(key) {
-    await invoke('cmd_set_keybindings_enabled', { enabled: false });
+    await invoke("cmd_set_keybindings_enabled", { enabled: false });
     recordingKey = key;
     // Unfocus app so low-level hook can capture keys
-    await invoke('cmd_unfocus_window');
+    await invoke("cmd_unfocus_window");
   }
 
   async function stopRecording() {
     recordingKey = null;
-    await invoke('cmd_set_keybindings_enabled', { enabled: true });
+    await invoke("cmd_set_keybindings_enabled", { enabled: true });
     // Refocus window
     const win = getCurrentWindow();
     await win.setFocus(true).catch(() => {});
@@ -270,19 +321,19 @@
 
     const oldKey = keybindings[recordingKey];
     const conflictAction = Object.entries(keybindings).find(
-      ([action, boundKey]) => boundKey === keyName && action !== recordingKey
+      ([action, boundKey]) => boundKey === keyName && action !== recordingKey,
     );
 
     if (conflictAction) {
       keybindings = {
         ...keybindings,
         [conflictAction[0]]: oldKey,
-        [recordingKey]: keyName
+        [recordingKey]: keyName,
       };
     } else {
       keybindings = {
         ...keybindings,
-        [recordingKey]: keyName
+        [recordingKey]: keyName,
       };
     }
 
@@ -292,24 +343,26 @@
 
   async function checkForUpdates() {
     try {
-      const response = await fetch('https://api.github.com/repos/SnowiyQ/Where-Winds-Meet-Midi-Player/releases/latest');
+      const response = await fetch(
+        "https://api.github.com/repos/SnowiyQ/Where-Winds-Meet-Midi-Player/releases/latest",
+      );
       if (!response.ok) return;
       const data = await response.json();
-      const latestVersion = data.tag_name?.replace(/^v/, '') || '';
+      const latestVersion = data.tag_name?.replace(/^v/, "") || "";
       if (latestVersion && compareVersions(latestVersion, APP_VERSION) > 0) {
         updateAvailable = {
           version: latestVersion,
-          url: data.html_url
+          url: data.html_url,
         };
       }
     } catch (e) {
-      console.log('Update check failed:', e);
+      console.log("Update check failed:", e);
     }
   }
 
   function compareVersions(a, b) {
-    const partsA = a.split('.').map(Number);
-    const partsB = b.split('.').map(Number);
+    const partsA = a.split(".").map(Number);
+    const partsB = b.split(".").map(Number);
     for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
       const numA = partsA[i] || 0;
       const numB = partsB[i] || 0;
@@ -322,7 +375,7 @@
   async function toggleCloudMode() {
     cloudMode = !cloudMode;
     try {
-      await invoke('set_cloud_mode', { enabled: cloudMode });
+      await invoke("set_cloud_mode", { enabled: cloudMode });
     } catch (e) {
       console.error("Failed to set cloud mode:", e);
       cloudMode = !cloudMode; // revert on error
@@ -332,7 +385,7 @@
   // Note key binding functions
   async function saveNoteKeys() {
     try {
-      await invoke('set_note_keys', noteKeys);
+      await invoke("set_note_keys", noteKeys);
     } catch (e) {
       console.error("Failed to save note keys:", e);
     }
@@ -340,7 +393,7 @@
 
   async function resetNoteKeys() {
     try {
-      const keys = await invoke('reset_note_keys');
+      const keys = await invoke("reset_note_keys");
       noteKeys = keys;
     } catch (e) {
       console.error("Failed to reset note keys:", e);
@@ -360,7 +413,7 @@
     noteKeys = {
       low: [...preset.low],
       mid: [...preset.mid],
-      high: [...preset.high]
+      high: [...preset.high],
     };
     await saveNoteKeys();
     showPresetModal = false;
@@ -373,14 +426,14 @@
   }
 
   async function startRecordingNoteKey(octave, index) {
-    await invoke('cmd_set_keybindings_enabled', { enabled: false });
+    await invoke("cmd_set_keybindings_enabled", { enabled: false });
     recordingNoteKey = { octave, index };
-    await invoke('cmd_unfocus_window');
+    await invoke("cmd_unfocus_window");
   }
 
   async function stopRecordingNoteKey() {
     recordingNoteKey = null;
-    await invoke('cmd_set_keybindings_enabled', { enabled: true });
+    await invoke("cmd_set_keybindings_enabled", { enabled: true });
     const win = getCurrentWindow();
     await win.setFocus(true).catch(() => {});
   }
@@ -394,10 +447,10 @@
 
     // Also handle named keys
     const keyMap = {
-      'semicolon': ';',
-      'comma': ',',
-      'period': '.',
-      'slash': '/',
+      semicolon: ";",
+      comma: ",",
+      period: ".",
+      slash: "/",
     };
 
     const mappedKey = keyMap[key] || key;
@@ -425,7 +478,7 @@
         title: "Select Album Folder",
       });
       if (selected) {
-        await invoke('set_album_path', { path: selected });
+        await invoke("set_album_path", { path: selected });
         albumPath = selected;
         await loadMidiFiles(); // Reload files from new location
       }
@@ -438,7 +491,7 @@
 
   async function resetAlbumPath() {
     try {
-      albumPath = await invoke('reset_album_path');
+      albumPath = await invoke("reset_album_path");
       await loadMidiFiles(); // Reload files from default location
     } catch (e) {
       console.error("Failed to reset album path:", e);
@@ -450,24 +503,28 @@
     const keyword = newKeyword.trim().toLowerCase();
     if (!customWindowKeywords.includes(keyword)) {
       customWindowKeywords = [...customWindowKeywords, keyword];
-      await invoke('set_custom_window_keywords', { keywords: customWindowKeywords });
+      await invoke("set_custom_window_keywords", {
+        keywords: customWindowKeywords,
+      });
     }
     newKeyword = "";
   }
 
   async function removeWindowKeyword(keyword) {
-    customWindowKeywords = customWindowKeywords.filter(k => k !== keyword);
-    await invoke('set_custom_window_keywords', { keywords: customWindowKeywords });
+    customWindowKeywords = customWindowKeywords.filter((k) => k !== keyword);
+    await invoke("set_custom_window_keywords", {
+      keywords: customWindowKeywords,
+    });
   }
 
   async function handleSpamTest() {
     if (isSpamming) return;
     isSpamming = true;
     try {
-      await invoke('spam_test', {
+      await invoke("spam_test", {
         key: spamKey,
         count: parseInt(spamCount),
-        delayMs: parseInt(spamDelay)
+        delayMs: parseInt(spamDelay),
       });
     } catch (error) {
       console.error("Spam test failed:", error);
@@ -480,9 +537,9 @@
     if (isSpammingMulti) return;
     isSpammingMulti = true;
     try {
-      await invoke('spam_test_multi', {
+      await invoke("spam_test_multi", {
         count: parseInt(spamCount),
-        delayMs: parseInt(spamDelay)
+        delayMs: parseInt(spamDelay),
       });
     } catch (error) {
       console.error("Multi spam test failed:", error);
@@ -495,10 +552,10 @@
     if (isSpammingChord) return;
     isSpammingChord = true;
     try {
-      await invoke('spam_test_chord', {
+      await invoke("spam_test_chord", {
         chordSize: parseInt(chordSize),
         count: parseInt(spamCount),
-        delayMs: parseInt(spamDelay)
+        delayMs: parseInt(spamDelay),
       });
     } catch (error) {
       console.error("Chord test failed:", error);
@@ -509,21 +566,60 @@
 
   // Note calculation mode options (reactive for i18n)
   $: noteModesList = [
-    { id: "Python", name: $t("noteMode.yuelyn"), description: $t("noteMode.yuelynDesc"), rmd21: true },
-    { id: "Closest", name: $t("noteMode.closest"), description: $t("noteMode.closestDesc") },
-    { id: "Wide", name: $t("noteMode.wide"), description: $t("noteMode.wideDesc") },
-    { id: "Sharps", name: $t("noteMode.sharps"), description: $t("noteMode.sharpsDesc"), rmd36: true },
-    { id: "Quantize", name: $t("noteMode.quantize"), description: $t("noteMode.quantizeDesc") },
-    { id: "TransposeOnly", name: $t("noteMode.transposeOnly"), description: $t("noteMode.transposeOnlyDesc") },
-    { id: "Pentatonic", name: $t("noteMode.pentatonic"), description: $t("noteMode.pentatonicDesc") },
-    { id: "Chromatic", name: $t("noteMode.chromatic"), description: $t("noteMode.chromaticDesc") },
-    { id: "Raw", name: $t("noteMode.raw"), description: $t("noteMode.rawDesc") },
+    {
+      id: "Python",
+      name: $t("noteMode.yuelyn"),
+      description: $t("noteMode.yuelynDesc"),
+      rmd21: true,
+    },
+    {
+      id: "Closest",
+      name: $t("noteMode.closest"),
+      description: $t("noteMode.closestDesc"),
+    },
+    {
+      id: "Wide",
+      name: $t("noteMode.wide"),
+      description: $t("noteMode.wideDesc"),
+    },
+    {
+      id: "Sharps",
+      name: $t("noteMode.sharps"),
+      description: $t("noteMode.sharpsDesc"),
+      rmd36: true,
+    },
+    {
+      id: "Quantize",
+      name: $t("noteMode.quantize"),
+      description: $t("noteMode.quantizeDesc"),
+    },
+    {
+      id: "TransposeOnly",
+      name: $t("noteMode.transposeOnly"),
+      description: $t("noteMode.transposeOnlyDesc"),
+    },
+    {
+      id: "Pentatonic",
+      name: $t("noteMode.pentatonic"),
+      description: $t("noteMode.pentatonicDesc"),
+    },
+    {
+      id: "Chromatic",
+      name: $t("noteMode.chromatic"),
+      description: $t("noteMode.chromaticDesc"),
+    },
+    {
+      id: "Raw",
+      name: $t("noteMode.raw"),
+      description: $t("noteMode.rawDesc"),
+    },
   ];
 
   // Reactive: show RMD based on key mode
-  $: noteModes = noteModesList.map(m => ({
+  $: noteModes = noteModesList.map((m) => ({
     ...m,
-    isRmd: ($keyMode === 'Keys36' && m.rmd36) || ($keyMode === 'Keys21' && m.rmd21)
+    isRmd:
+      ($keyMode === "Keys36" && m.rmd36) || ($keyMode === "Keys21" && m.rmd21),
   }));
 
   async function handleModeChange(mode) {
@@ -559,8 +655,6 @@
   }
 </script>
 
-
-
 <div class="h-full flex flex-col">
   <!-- Header -->
   <div class="mb-4">
@@ -573,7 +667,10 @@
 
     <!-- Search & Quick Nav -->
     <div class="relative mb-3">
-      <Icon icon="mdi:magnify" class="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 w-4 h-4" />
+      <Icon
+        icon="mdi:magnify"
+        class="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 w-4 h-4"
+      />
       <input
         type="text"
         placeholder={$t("settings.searchPlaceholder")}
@@ -600,7 +697,13 @@
   <div
     bind:this={scrollContainer}
     onscroll={handleScroll}
-    class="flex-1 overflow-y-auto space-y-6 pr-2 {showTopMask && showBottomMask ? 'scroll-mask-both' : showTopMask ? 'scroll-mask-top' : showBottomMask ? 'scroll-mask-bottom' : ''}"
+    class="flex-1 overflow-y-auto space-y-6 pr-2 {showTopMask && showBottomMask
+      ? 'scroll-mask-both'
+      : showTopMask
+        ? 'scroll-mask-top'
+        : showBottomMask
+          ? 'scroll-mask-bottom'
+          : ''}"
   >
     <!-- Shortcuts Section -->
     <div
@@ -611,7 +714,9 @@
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2">
           <Icon icon="mdi:keyboard-settings" class="w-5 h-5 text-[#1db954]" />
-          <h3 class="text-lg font-semibold">{$t("settings.shortcuts.title")}</h3>
+          <h3 class="text-lg font-semibold">
+            {$t("settings.shortcuts.title")}
+          </h3>
         </div>
         <button
           class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white/60 hover:text-white text-xs font-medium transition-colors"
@@ -627,13 +732,18 @@
 
       <div class="grid grid-cols-2 gap-3">
         {#each Object.entries(keybindingLabels) as [key, label]}
-          <div class="flex items-center justify-between bg-white/5 rounded-lg p-3">
+          <div
+            class="flex items-center justify-between bg-white/5 rounded-lg p-3"
+          >
             <span class="text-sm text-white/80">{label}</span>
             <button
-              class="px-3 py-1.5 rounded-md font-mono text-sm min-w-[60px] text-center transition-all {recordingKey === key ? 'bg-[#1db954] text-black animate-pulse' : 'bg-white/10 hover:bg-white/20 text-white'}"
+              class="px-3 py-1.5 rounded-md font-mono text-sm min-w-[60px] text-center transition-all {recordingKey ===
+              key
+                ? 'bg-[#1db954] text-black animate-pulse'
+                : 'bg-white/10 hover:bg-white/20 text-white'}"
               onclick={() => startRecording(key)}
             >
-              {recordingKey === key ? '...' : keybindings[key]}
+              {recordingKey === key ? "..." : keybindings[key]}
             </button>
           </div>
         {/each}
@@ -666,7 +776,7 @@
           bind:value={newKeyword}
           placeholder={$t("settings.window.placeholder")}
           class="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#1db954] focus:border-transparent"
-          onkeydown={(e) => e.key === 'Enter' && addWindowKeyword()}
+          onkeydown={(e) => e.key === "Enter" && addWindowKeyword()}
         />
         <button
           class="px-4 py-2 rounded-lg bg-[#1db954] hover:bg-[#1ed760] text-white font-medium text-sm transition-colors"
@@ -679,10 +789,14 @@
       <!-- Custom keywords -->
       {#if customWindowKeywords.length > 0}
         <div class="mb-3">
-          <p class="text-xs text-white/40 mb-2">{$t("settings.window.custom")}</p>
+          <p class="text-xs text-white/40 mb-2">
+            {$t("settings.window.custom")}
+          </p>
           <div class="flex flex-wrap gap-1.5">
             {#each customWindowKeywords as keyword}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 text-xs text-white/60">
+              <span
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 text-xs text-white/60"
+              >
                 {keyword}
                 <button
                   class="text-white/40 hover:text-red-400 transition-colors"
@@ -699,10 +813,15 @@
 
       <!-- Built-in keywords -->
       <div>
-        <p class="text-xs text-white/40 mb-2">{$t("settings.window.builtIn")}</p>
+        <p class="text-xs text-white/40 mb-2">
+          {$t("settings.window.builtIn")}
+        </p>
         <div class="flex flex-wrap gap-1.5">
-          {#each ['Where Winds Meet', 'WWM', 'GeForce Now', '燕云十六声', '연운'] as builtin}
-            <span class="px-2 py-0.5 rounded-full bg-white/10 text-xs text-white/60">{builtin}</span>
+          {#each ["Where Winds Meet", "WWM", "yysls", "GeForce Now", "燕云十六声", "연운", "Naraka"] as builtin}
+            <span
+              class="px-2 py-0.5 rounded-full bg-white/10 text-xs text-white/60"
+              >{builtin}</span
+            >
           {/each}
         </div>
       </div>
@@ -736,7 +855,10 @@
               <div class="flex items-center gap-2">
                 <span class="font-semibold text-white">{mode.name}</span>
                 {#if mode.isRmd}
-                  <span class="px-1.5 text-[10px] font-semibold bg-[#1db954]/20 text-[#1db954] rounded-full leading-4">RMD</span>
+                  <span
+                    class="px-1.5 text-[10px] font-semibold bg-[#1db954]/20 text-[#1db954] rounded-full leading-4"
+                    >RMD</span
+                  >
                 {/if}
               </div>
               {#if $noteMode === mode.id}
@@ -751,7 +873,6 @@
           </button>
         {/each}
       </div>
-
     </div>
 
     <!-- Key Mode Section (Play Style) -->
@@ -771,10 +892,11 @@
 
       <div class="flex gap-3">
         <button
-          class="flex-1 p-4 rounded-lg border-2 transition-all duration-200 {$keyMode === 'Keys21'
+          class="flex-1 p-4 rounded-lg border-2 transition-all duration-200 {$keyMode ===
+          'Keys21'
             ? 'border-[#1db954] bg-[#1db954]/10'
             : 'border-white/10 bg-white/5 hover:border-white/20'}"
-          onclick={() => setKeyMode('Keys21')}
+          onclick={() => setKeyMode("Keys21")}
         >
           <div class="text-center">
             <span class="text-2xl font-bold">{$t("keyMode.keys21")}</span>
@@ -782,10 +904,11 @@
           </div>
         </button>
         <button
-          class="flex-1 p-4 rounded-lg border-2 transition-all duration-200 {$keyMode === 'Keys36'
+          class="flex-1 p-4 rounded-lg border-2 transition-all duration-200 {$keyMode ===
+          'Keys36'
             ? 'border-[#1db954] bg-[#1db954]/10'
             : 'border-white/10 bg-white/5 hover:border-white/20'}"
-          onclick={() => setKeyMode('Keys36')}
+          onclick={() => setKeyMode("Keys36")}
         >
           <div class="text-center">
             <span class="text-2xl font-bold">{$t("keyMode.keys36")}</span>
@@ -807,7 +930,11 @@
             icon={isTesting ? "mdi:loading" : "mdi:piano"}
             class="w-5 h-5 {isTesting ? 'animate-spin' : ''}"
           />
-          <span class="font-medium text-sm">{isTesting ? $t("settings.keyStyle.testing") : $t("settings.keyStyle.test21")}</span>
+          <span class="font-medium text-sm"
+            >{isTesting
+              ? $t("settings.keyStyle.testing")
+              : $t("settings.keyStyle.test21")}</span
+          >
         </button>
         <button
           class="flex-1 py-3 px-4 rounded-lg bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center gap-2 {isTesting36
@@ -820,13 +947,20 @@
             icon={isTesting36 ? "mdi:loading" : "mdi:piano"}
             class="w-5 h-5 {isTesting36 ? 'animate-spin' : ''}"
           />
-          <span class="font-medium text-sm">{isTesting36 ? $t("settings.keyStyle.testing") : $t("settings.keyStyle.test36")}</span>
+          <span class="font-medium text-sm"
+            >{isTesting36
+              ? $t("settings.keyStyle.testing")
+              : $t("settings.keyStyle.test36")}</span
+          >
         </button>
       </div>
 
       <!-- Spam Test (Dev Only) -->
       {#if isDev}
-        <div id="settings-debug" class="mt-4 pt-4 border-t border-white/10 scroll-mt-4">
+        <div
+          id="settings-debug"
+          class="mt-4 pt-4 border-t border-white/10 scroll-mt-4"
+        >
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="mdi:bug" class="w-4 h-4 text-orange-400" />
             <p class="font-medium text-orange-400 text-sm">Spam Test (Dev)</p>
@@ -879,28 +1013,49 @@
           </div>
           <div class="flex gap-2">
             <button
-              class="flex-1 py-2 px-3 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 transition-colors flex items-center justify-center gap-1 {isSpamming ? 'opacity-50 cursor-not-allowed' : ''}"
+              class="flex-1 py-2 px-3 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 transition-colors flex items-center justify-center gap-1 {isSpamming
+                ? 'opacity-50 cursor-not-allowed'
+                : ''}"
               onclick={handleSpamTest}
               disabled={isSpamming}
             >
-              <Icon icon={isSpamming ? "mdi:loading" : "mdi:flash"} class="w-4 h-4 {isSpamming ? 'animate-spin' : ''}" />
-              <span class="font-medium text-xs">{isSpamming ? "..." : "1Key"}</span>
+              <Icon
+                icon={isSpamming ? "mdi:loading" : "mdi:flash"}
+                class="w-4 h-4 {isSpamming ? 'animate-spin' : ''}"
+              />
+              <span class="font-medium text-xs"
+                >{isSpamming ? "..." : "1Key"}</span
+              >
             </button>
             <button
-              class="flex-1 py-2 px-3 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 transition-colors flex items-center justify-center gap-1 {isSpammingMulti ? 'opacity-50 cursor-not-allowed' : ''}"
+              class="flex-1 py-2 px-3 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 transition-colors flex items-center justify-center gap-1 {isSpammingMulti
+                ? 'opacity-50 cursor-not-allowed'
+                : ''}"
               onclick={handleSpamTestMulti}
               disabled={isSpammingMulti}
             >
-              <Icon icon={isSpammingMulti ? "mdi:loading" : "mdi:flash-circle"} class="w-4 h-4 {isSpammingMulti ? 'animate-spin' : ''}" />
-              <span class="font-medium text-xs">{isSpammingMulti ? "..." : "21Key"}</span>
+              <Icon
+                icon={isSpammingMulti ? "mdi:loading" : "mdi:flash-circle"}
+                class="w-4 h-4 {isSpammingMulti ? 'animate-spin' : ''}"
+              />
+              <span class="font-medium text-xs"
+                >{isSpammingMulti ? "..." : "21Key"}</span
+              >
             </button>
             <button
-              class="flex-1 py-2 px-3 rounded-lg bg-green-500/20 hover:bg-green-500/30 border border-green-500/50 transition-colors flex items-center justify-center gap-1 {isSpammingChord ? 'opacity-50 cursor-not-allowed' : ''}"
+              class="flex-1 py-2 px-3 rounded-lg bg-green-500/20 hover:bg-green-500/30 border border-green-500/50 transition-colors flex items-center justify-center gap-1 {isSpammingChord
+                ? 'opacity-50 cursor-not-allowed'
+                : ''}"
               onclick={handleSpamTestChord}
               disabled={isSpammingChord}
             >
-              <Icon icon={isSpammingChord ? "mdi:loading" : "mdi:music"} class="w-4 h-4 {isSpammingChord ? 'animate-spin' : ''}" />
-              <span class="font-medium text-xs">{isSpammingChord ? "..." : "Chord"}</span>
+              <Icon
+                icon={isSpammingChord ? "mdi:loading" : "mdi:music"}
+                class="w-4 h-4 {isSpammingChord ? 'animate-spin' : ''}"
+              />
+              <span class="font-medium text-xs"
+                >{isSpammingChord ? "..." : "Chord"}</span
+              >
             </button>
           </div>
         </div>
@@ -931,9 +1086,13 @@
       </p>
 
       {#if !activePreset}
-        <div class="flex items-center gap-2 px-3 py-2 mb-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+        <div
+          class="flex items-center gap-2 px-3 py-2 mb-3 rounded-lg bg-purple-500/10 border border-purple-500/20"
+        >
           <Icon icon="mdi:tune" class="w-4 h-4 text-purple-400" />
-          <span class="text-xs text-purple-300">{$t("settings.keyboard.customLayout")}</span>
+          <span class="text-xs text-purple-300"
+            >{$t("settings.keyboard.customLayout")}</span
+          >
         </div>
       {/if}
 
@@ -941,18 +1100,33 @@
       <div class="flex gap-2 mb-4">
         {#each Object.entries(KEY_PRESETS) as [key, preset]}
           <button
-            class="flex-1 py-2 px-3 rounded-lg transition-colors text-center relative {activePreset === key
+            class="flex-1 py-2 px-3 rounded-lg transition-colors text-center relative {activePreset ===
+            key
               ? 'bg-[#1db954]/10 border-2 border-[#1db954]'
               : 'bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20'}"
             onclick={() => selectPreset(key)}
           >
             {#if activePreset === key}
-              <div class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#1db954] flex items-center justify-center">
+              <div
+                class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#1db954] flex items-center justify-center"
+              >
                 <Icon icon="mdi:check" class="w-3 h-3 text-white" />
               </div>
             {/if}
-            <p class="font-medium text-sm {activePreset === key ? 'text-[#1db954]' : 'text-white'}">{preset.name}</p>
-            <p class="text-xs {activePreset === key ? 'text-[#1db954]/60' : 'text-white/40'}">{preset.desc}</p>
+            <p
+              class="font-medium text-sm {activePreset === key
+                ? 'text-[#1db954]'
+                : 'text-white'}"
+            >
+              {preset.name}
+            </p>
+            <p
+              class="text-xs {activePreset === key
+                ? 'text-[#1db954]/60'
+                : 'text-white/40'}"
+            >
+              {preset.desc}
+            </p>
           </button>
         {/each}
       </div>
@@ -961,14 +1135,22 @@
       <div class="space-y-3">
         <!-- High Octave -->
         <div class="bg-white/5 rounded-lg p-3">
-          <p class="text-xs text-white/40 mb-2">{$t("settings.keyboard.highOctave")}</p>
+          <p class="text-xs text-white/40 mb-2">
+            {$t("settings.keyboard.highOctave")}
+          </p>
           <div class="flex gap-1.5">
             {#each noteKeys.high as key, i}
               <button
-                class="flex-1 py-2 rounded-md font-mono text-sm text-center transition-all uppercase {recordingNoteKey?.octave === 'high' && recordingNoteKey?.index === i ? 'bg-[#1db954] text-black animate-pulse' : 'bg-white/10 hover:bg-white/20 text-white'}"
-                onclick={() => startRecordingNoteKey('high', i)}
+                class="flex-1 py-2 rounded-md font-mono text-sm text-center transition-all uppercase {recordingNoteKey?.octave ===
+                  'high' && recordingNoteKey?.index === i
+                  ? 'bg-[#1db954] text-black animate-pulse'
+                  : 'bg-white/10 hover:bg-white/20 text-white'}"
+                onclick={() => startRecordingNoteKey("high", i)}
               >
-                {recordingNoteKey?.octave === 'high' && recordingNoteKey?.index === i ? '...' : key}
+                {recordingNoteKey?.octave === "high" &&
+                recordingNoteKey?.index === i
+                  ? "..."
+                  : key}
               </button>
             {/each}
           </div>
@@ -976,14 +1158,22 @@
 
         <!-- Mid Octave -->
         <div class="bg-white/5 rounded-lg p-3">
-          <p class="text-xs text-white/40 mb-2">{$t("settings.keyboard.midOctave")}</p>
+          <p class="text-xs text-white/40 mb-2">
+            {$t("settings.keyboard.midOctave")}
+          </p>
           <div class="flex gap-1.5">
             {#each noteKeys.mid as key, i}
               <button
-                class="flex-1 py-2 rounded-md font-mono text-sm text-center transition-all uppercase {recordingNoteKey?.octave === 'mid' && recordingNoteKey?.index === i ? 'bg-[#1db954] text-black animate-pulse' : 'bg-white/10 hover:bg-white/20 text-white'}"
-                onclick={() => startRecordingNoteKey('mid', i)}
+                class="flex-1 py-2 rounded-md font-mono text-sm text-center transition-all uppercase {recordingNoteKey?.octave ===
+                  'mid' && recordingNoteKey?.index === i
+                  ? 'bg-[#1db954] text-black animate-pulse'
+                  : 'bg-white/10 hover:bg-white/20 text-white'}"
+                onclick={() => startRecordingNoteKey("mid", i)}
               >
-                {recordingNoteKey?.octave === 'mid' && recordingNoteKey?.index === i ? '...' : key}
+                {recordingNoteKey?.octave === "mid" &&
+                recordingNoteKey?.index === i
+                  ? "..."
+                  : key}
               </button>
             {/each}
           </div>
@@ -991,14 +1181,22 @@
 
         <!-- Low Octave -->
         <div class="bg-white/5 rounded-lg p-3">
-          <p class="text-xs text-white/40 mb-2">{$t("settings.keyboard.lowOctave")}</p>
+          <p class="text-xs text-white/40 mb-2">
+            {$t("settings.keyboard.lowOctave")}
+          </p>
           <div class="flex gap-1.5">
             {#each noteKeys.low as key, i}
               <button
-                class="flex-1 py-2 rounded-md font-mono text-sm text-center transition-all uppercase {recordingNoteKey?.octave === 'low' && recordingNoteKey?.index === i ? 'bg-[#1db954] text-black animate-pulse' : 'bg-white/10 hover:bg-white/20 text-white'}"
-                onclick={() => startRecordingNoteKey('low', i)}
+                class="flex-1 py-2 rounded-md font-mono text-sm text-center transition-all uppercase {recordingNoteKey?.octave ===
+                  'low' && recordingNoteKey?.index === i
+                  ? 'bg-[#1db954] text-black animate-pulse'
+                  : 'bg-white/10 hover:bg-white/20 text-white'}"
+                onclick={() => startRecordingNoteKey("low", i)}
               >
-                {recordingNoteKey?.octave === 'low' && recordingNoteKey?.index === i ? '...' : key}
+                {recordingNoteKey?.octave === "low" &&
+                recordingNoteKey?.index === i
+                  ? "..."
+                  : key}
               </button>
             {/each}
           </div>
@@ -1011,11 +1209,14 @@
 
       <!-- 36-Key Info -->
       <div class="mt-4 pt-4 border-t border-white/10">
-        <p class="text-xs text-white/40 mb-2">{$t("settings.keyboard.keyMode36Info")}</p>
+        <p class="text-xs text-white/40 mb-2">
+          {$t("settings.keyboard.keyMode36Info")}
+        </p>
         <div class="space-y-1 text-xs">
           <div>
             <span class="text-orange-400">Shift+</span>
-            <span class="text-white/60">{$t("settings.keyboard.shiftFor")}</span>
+            <span class="text-white/60">{$t("settings.keyboard.shiftFor")}</span
+            >
           </div>
           <div>
             <span class="text-blue-400">Ctrl+</span>
@@ -1039,8 +1240,12 @@
       <!-- Smart Pause Toggle -->
       <div class="flex items-center justify-between py-3">
         <div>
-          <p class="font-medium text-white">{$t("settings.playback.smartPause")}</p>
-          <p class="text-sm text-white/60">{$t("settings.playback.smartPauseDesc")}</p>
+          <p class="font-medium text-white">
+            {$t("settings.playback.smartPause")}
+          </p>
+          <p class="text-sm text-white/60">
+            {$t("settings.playback.smartPauseDesc")}
+          </p>
         </div>
         <button
           class="relative w-12 h-6 rounded-full transition-colors duration-200 {$smartPause
@@ -1057,10 +1262,17 @@
       </div>
 
       <!-- Cloud Gaming Mode Toggle -->
-      <div id="settings-cloud" class="flex items-center justify-between py-3 border-t border-white/10 scroll-mt-4">
+      <div
+        id="settings-cloud"
+        class="flex items-center justify-between py-3 border-t border-white/10 scroll-mt-4"
+      >
         <div>
-          <p class="font-medium text-white">{$t("settings.playback.cloudMode")}</p>
-          <p class="text-sm text-white/60">{$t("settings.playback.cloudModeDesc")}</p>
+          <p class="font-medium text-white">
+            {$t("settings.playback.cloudMode")}
+          </p>
+          <p class="text-sm text-white/60">
+            {$t("settings.playback.cloudModeDesc")}
+          </p>
           {#if cloudMode}
             <div class="text-xs text-orange-400 mt-1 space-y-0.5">
               <p>⚠️ {$t("settings.playback.cloudWarning1")}</p>
@@ -1101,7 +1313,9 @@
 
       <!-- Current Path Display -->
       <div class="bg-white/5 rounded-lg p-3 mb-4">
-        <p class="text-xs text-white/40 mb-1">{$t("settings.storage.currentFolder")}</p>
+        <p class="text-xs text-white/40 mb-1">
+          {$t("settings.storage.currentFolder")}
+        </p>
         <p class="text-sm text-white font-mono truncate" title={albumPath}>
           {albumPath || $t("settings.storage.loading")}
         </p>
@@ -1110,7 +1324,9 @@
       <!-- Action Buttons -->
       <div class="flex gap-3">
         <button
-          class="flex-1 py-3 px-4 rounded-lg bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center gap-2 {isChangingPath ? 'opacity-50 cursor-not-allowed' : ''}"
+          class="flex-1 py-3 px-4 rounded-lg bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center gap-2 {isChangingPath
+            ? 'opacity-50 cursor-not-allowed'
+            : ''}"
           onclick={changeAlbumPath}
           disabled={isChangingPath}
         >
@@ -1118,7 +1334,11 @@
             icon={isChangingPath ? "mdi:loading" : "mdi:folder-open"}
             class="w-5 h-5 {isChangingPath ? 'animate-spin' : ''}"
           />
-          <span class="font-medium text-sm">{isChangingPath ? $t("settings.storage.selecting") : $t("settings.storage.browse")}</span>
+          <span class="font-medium text-sm"
+            >{isChangingPath
+              ? $t("settings.storage.selecting")
+              : $t("settings.storage.browse")}</span
+          >
         </button>
         <button
           class="py-3 px-4 rounded-lg bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center gap-2"
@@ -1126,7 +1346,8 @@
           title={$t("settings.storage.resetToDefault")}
         >
           <Icon icon="mdi:restore" class="w-5 h-5" />
-          <span class="font-medium text-sm">{$t("settings.storage.reset")}</span>
+          <span class="font-medium text-sm">{$t("settings.storage.reset")}</span
+          >
         </button>
       </div>
     </div>
@@ -1144,20 +1365,76 @@
       <div class="text-sm text-white/60 space-y-3">
         <p>{$t("settings.about.description")}</p>
         <div class="flex items-center gap-2">
-          <span class="text-xs text-white/40">{$t("settings.about.byYueLyn")}</span>
+          <span class="text-xs text-white/40 font-medium">Vùng Đất Chill</span>
           <span class="text-white/20">•</span>
-          <span class="text-xs text-white/40">v{APP_VERSION}{APP_FLAVOR ? `(${APP_FLAVOR})` : ''}</span>
+          <span class="text-xs text-white/40"
+            >v{APP_VERSION}{APP_FLAVOR ? `(${APP_FLAVOR})` : ""}</span
+          >
+        </div>
+        <div class="bg-black/20 rounded-xl p-4 border border-white/5 space-y-4">
+          <p class="text-white/70 leading-relaxed text-sm">
+            Dựa trên mã nguồn mở <strong class="text-white"
+              >Where Winds Meet Midi Player</strong
+            >
+            được phát triển bởi tác giả
+            <strong class="text-white">YueLyn</strong>.
+          </p>
+          <div class="flex items-center justify-between">
+            <a
+              href="https://github.com/YueLyn/Where-Winds-Meet-Midi-Player"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-xs text-white/40 hover:text-[#1db954] hover:underline flex items-center gap-1.5 transition-colors"
+              title="View original source code"
+            >
+              <Icon icon="mdi:github" class="w-4 h-4" />
+              GitHub Source
+            </a>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <p class="text-xs text-white/40 font-medium uppercase tracking-wider">
+            Cộng đồng
+          </p>
+          <a
+            href="https://discord.gg/c9a4paH47J"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex items-center gap-4 p-4 rounded-2xl bg-[#5865F2] hover:bg-[#4752C4] text-white shadow-lg shadow-[#5865F2]/10 transition-all transform hover:scale-[1.01] active:scale-[0.99] group"
+          >
+            <div
+              class="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors"
+            >
+              <Icon icon="ic:baseline-discord" class="w-8 h-8" />
+            </div>
+            <div class="flex-1">
+              <p class="font-bold text-base">Discord Vùng Đất Chill</p>
+              <p class="text-xs text-white/70">Tham gia để cập nhật & hỗ trợ</p>
+            </div>
+            <Icon
+              icon="mdi:chevron-right"
+              class="w-6 h-6 text-white/40 group-hover:text-white transition-colors"
+            />
+          </a>
         </div>
 
         {#if updateAvailable}
           <button
             class="w-full flex items-center gap-3 p-3 rounded-lg bg-[#1db954]/10 hover:bg-[#1db954]/20 transition-colors"
-            onclick={() => window.dispatchEvent(new CustomEvent('open-update-modal'))}
+            onclick={() =>
+              window.dispatchEvent(new CustomEvent("open-update-modal"))}
           >
             <Icon icon="mdi:download-circle" class="w-6 h-6 text-[#1db954]" />
             <div class="text-left">
-              <p class="text-sm font-medium text-[#1db954]">{$t("settings.about.updateAvailable")}</p>
-              <p class="text-xs text-white/50">v{updateAvailable.version} - {$t("settings.about.clickToDownload")}</p>
+              <p class="text-sm font-medium text-[#1db954]">
+                {$t("settings.about.updateAvailable")}
+              </p>
+              <p class="text-xs text-white/50">
+                v{updateAvailable.version} - {$t(
+                  "settings.about.clickToDownload",
+                )}
+              </p>
             </div>
           </button>
         {:else}
@@ -1173,38 +1450,72 @@
 
 <!-- Preset Confirmation Modal -->
 {#if showPresetModal && pendingPreset && KEY_PRESETS[pendingPreset]}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center"
     onclick={cancelPreset}
     in:fade={{ duration: 150 }}
   >
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="bg-[#282828] rounded-xl p-6 max-w-md mx-4 shadow-2xl border border-white/10"
       onclick={(e) => e.stopPropagation()}
       in:fly={{ y: 20, duration: 200 }}
     >
       <div class="flex items-center gap-3 mb-4">
-        <div class="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center">
+        <div
+          class="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center"
+        >
           <Icon icon="mdi:alert" class="w-5 h-5 text-orange-400" />
         </div>
         <div>
-          <h3 class="text-lg font-semibold text-white">{$t("settings.presets.applyLayout", { values: { name: KEY_PRESETS[pendingPreset].name } })}</h3>
+          <h3 class="text-lg font-semibold text-white">
+            {$t("settings.presets.applyLayout", {
+              values: { name: KEY_PRESETS[pendingPreset].name },
+            })}
+          </h3>
           <p class="text-sm text-white/60">{KEY_PRESETS[pendingPreset].desc}</p>
         </div>
       </div>
 
       <div class="bg-white/5 rounded-lg p-3 mb-4">
-        <p class="text-xs text-white/40 mb-2">{$t("settings.presets.willSetKeysTo")}</p>
+        <p class="text-xs text-white/40 mb-2">
+          {$t("settings.presets.willSetKeysTo")}
+        </p>
         <div class="space-y-1 text-sm font-mono">
-          <p><span class="text-white/40">{$t("settings.presets.high")}</span> <span class="text-white uppercase">{KEY_PRESETS[pendingPreset].high.join(' ')}</span></p>
-          <p><span class="text-white/40">{$t("settings.presets.mid")}</span> <span class="text-white uppercase">{KEY_PRESETS[pendingPreset].mid.join(' ')}</span></p>
-          <p><span class="text-white/40">{$t("settings.presets.low")}</span> <span class="text-white uppercase">{KEY_PRESETS[pendingPreset].low.join(' ')}</span></p>
+          <p>
+            <span class="text-white/40">{$t("settings.presets.high")}</span>
+            <span class="text-white uppercase"
+              >{KEY_PRESETS[pendingPreset].high.join(" ")}</span
+            >
+          </p>
+          <p>
+            <span class="text-white/40">{$t("settings.presets.mid")}</span>
+            <span class="text-white uppercase"
+              >{KEY_PRESETS[pendingPreset].mid.join(" ")}</span
+            >
+          </p>
+          <p>
+            <span class="text-white/40">{$t("settings.presets.low")}</span>
+            <span class="text-white uppercase"
+              >{KEY_PRESETS[pendingPreset].low.join(" ")}</span
+            >
+          </p>
         </div>
       </div>
 
-      <div class="flex items-center gap-2 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 mb-4">
-        <Icon icon="mdi:information" class="w-4 h-4 text-orange-400 flex-shrink-0" />
-        <p class="text-xs text-orange-300">{$t("settings.presets.overrideWarning")}</p>
+      <div
+        class="flex items-center gap-2 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 mb-4"
+      >
+        <Icon
+          icon="mdi:information"
+          class="w-4 h-4 text-orange-400 flex-shrink-0"
+        />
+        <p class="text-xs text-orange-300">
+          {$t("settings.presets.overrideWarning")}
+        </p>
       </div>
 
       <div class="flex gap-3">

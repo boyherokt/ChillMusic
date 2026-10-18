@@ -23,7 +23,7 @@ If you:
 👉 Please **open an issue** with a short intro and how you’d like to help.  
 I’m happy to delegate review or merge access to trusted contributors.
 
-# WWM Overlay – MIDI Music Player
+# Chill Music – MIDI Music Player
 
 A beautiful, feature-rich MIDI music player for **Where Winds Meet** that plays your songs by automatically pressing the correct keyboard keys in-game.
 
@@ -92,7 +92,7 @@ Press **`Insert`** to toggle mini mode or use the minimize button in the sidebar
 
 ## 🎮 What is this?
 
-**WWM Overlay – MIDI Music Player** lets you play music in **Where Winds Meet**’s music minigame using your own **MIDI files**.
+**Chill Music – MIDI Music Player** lets you play music in **Where Winds Meet**’s music minigame using your own **MIDI files**.
 
 - Load `.mid` files into the app
 - Hit **Play**
@@ -106,7 +106,10 @@ It’s basically an **auto-play piano** for the in-game instrument, with a **mod
 
 If you enjoy this app and want to support development:
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/snowiy)
+- Join our community: [Discord – Vùng Đất Chill](https://discord.com/invite/c9a4paH47J)
+- [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/snowiy)
+
+Note: Inside the app sidebar, the previous Ko-fi quick button is now a quick link to open the Discord invite above.
 
 ---
 
@@ -122,6 +125,12 @@ If you enjoy this app and want to support development:
 - **Seek support** – Click the timeline to jump to any position
 - **Song info** – Shows BPM and difficulty (Easy / Medium / Hard / Expert)
 - **Remembers window position** across sessions
+
+#### 💝 Donate Tab
+
+- Vào tab `App → Donate` để mở trang Ủng hộ trong ứng dụng.
+- Hiển thị mã QR cố định (VietQR/Napas) để bạn quét và ủng hộ tác giả.
+- Có hướng dẫn nội dung chuyển khoản và ghi chú kèm theo.
 
 ### 🎼 Playback & Mapping
 
@@ -161,7 +170,8 @@ If you enjoy this app and want to support development:
 
 ### 🌍 Internationalization
 
-- **Multi-language support**: English, 日本語, 한국어, ไทย, 中文
+- **Hỗ trợ đa ngôn ngữ**: Tiếng Việt (mặc định), English, 日本語, 한국어, ไทย, 中文
+- Đổi ngôn ngữ trong ứng dụng: mở `Settings → App` hoặc khu vực chọn ngôn ngữ (nếu có), sau đó chọn cờ/ngôn ngữ mong muốn. Tuỳ chọn sẽ được lưu và áp dụng khi khởi động lại.
 
 ---
 
@@ -173,13 +183,13 @@ If you enjoy this app and want to support development:
    Get the latest release from the **Releases** page.
 
 2. **Extract the files**  
-   Unzip to any folder (e.g. `C:\Games\wwm-overlay`).
+   Unzip to any folder (e.g. `C:\Games\ChillMusic`).
 
 3. **Add your MIDI files**  
    Put your `.mid` files in the `album` folder (see [folder structure](#-where-to-put-midi-files)).
 
 4. **Run as Administrator**  
-   Right-click `wwm-overlay.exe` → **Run as administrator**.  
+   Right-click `chill-music.exe` → **Run as administrator**.  
    > Needed to send keyboard input to the game.
 
 ---
@@ -356,6 +366,7 @@ If the game isn’t detected properly (e.g., through a launcher / different name
 Built-in detection includes:
 - `Where Winds Meet`
 - `WWM`
+- `yysls`
 - `GeForce Now`
 - `燕云十六声`
 - `연운`
@@ -492,8 +503,8 @@ Play together with friends by splitting notes or tracks between multiple players
 ## 📂 Where to Put MIDI Files
 
 ```text
-wwm-overlay/
-├── wwm-overlay.exe
+Chill-Music/
+├── chill-music.exe
 ├── album/              <- Put your .mid files here!
 │   ├── song1.mid
 │   ├── song2.mid

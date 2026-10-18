@@ -40,8 +40,8 @@
   },
   "noteMode": {
     "title": "ノートモード",
-    "yuelyn": "YueLyn",
-    "yuelynDesc": "YueLynのお気に入りモード",
+    "yuelyn": "HuwngNef",
+    "yuelynDesc": "HuwngNefのお気に入りモード",
     "closest": "最近接",
     "closestDesc": "ほとんどの曲に最適",
     "wide": "ワイド",
@@ -155,7 +155,7 @@
     "about": {
       "title": "について",
       "description": "Where Winds Meet用MIDIプレーヤー",
-      "byYueLyn": "By YueLyn",
+      "byYueLyn": "By HuwngNef",
       "updateAvailable": "アップデート利用可能",
       "clickToDownload": "クリックしてダウンロード",
       "latestVersion": "最新バージョンです"
@@ -396,7 +396,8 @@
     "gameFound": "ゲームを検出",
     "on": "オン",
     "off": "オフ",
-    "supportOnKofi": "Ko-fiでサポート"
+    "supportOnKofi": "Ko-fiでサポート",
+    "joinDiscordVDC": "Discord（Vùng Đất Chill）に参加"
   },
   "stats": {
     "title": "統計",

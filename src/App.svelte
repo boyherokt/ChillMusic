@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { fade, fly, scale } from "svelte/transition";
   import { listen } from "@tauri-apps/api/event";
-  import { invoke } from "./lib/tauri/core-proxy.js";
+  import { invoke, isTauri } from "./lib/tauri/core-proxy.js";
   import { onDestroy } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
@@ -10,7 +10,13 @@
   // i18n (must be imported early)
   import "./lib/i18n";
   import { t } from "svelte-i18n";
-  import { languages, currentLanguage, setLanguage, currentLanguageInfo, initUserLocales } from "./lib/i18n";
+  import {
+    languages,
+    currentLanguage,
+    setLanguage,
+    currentLanguageInfo,
+    initUserLocales,
+  } from "./lib/i18n";
 
   // Current version
   import { APP_VERSION, APP_FLAVOR } from "./lib/version.js";
@@ -24,24 +30,26 @@
   let isAlwaysOnTop = true; // Default from tauri.conf.json
 
   async function loadAlwaysOnTop() {
+    if (!isTauri) return;
     try {
-      const saved = await invoke('get_always_on_top');
+      const saved = await invoke("get_always_on_top");
       isAlwaysOnTop = saved;
       const appWindow = getCurrentWindow();
       await appWindow.setAlwaysOnTop(isAlwaysOnTop);
     } catch (e) {
-      console.error('Failed to load always on top setting:', e);
+      console.error("Failed to load always on top setting:", e);
     }
   }
 
   async function toggleAlwaysOnTop() {
+    if (!isTauri) return;
     try {
       const appWindow = getCurrentWindow();
       isAlwaysOnTop = !isAlwaysOnTop;
       await appWindow.setAlwaysOnTop(isAlwaysOnTop);
-      await invoke('save_always_on_top', { enabled: isAlwaysOnTop });
+      await invoke("save_always_on_top", { enabled: isAlwaysOnTop });
     } catch (e) {
-      console.error('Failed to toggle always on top:', e);
+      console.error("Failed to toggle always on top:", e);
     }
   }
 
@@ -53,7 +61,7 @@
     next: "F11",
     mode_prev: "[",
     mode_next: "]",
-    toggle_mini: "Insert"
+    toggle_mini: "Insert",
   };
 
   // Convert key name to event.code for language-independent detection
@@ -67,24 +75,38 @@
     if (/^[0-9]$/.test(key)) return `Digit${key}`;
     // Special keys
     const codeMap = {
-      '[': 'BracketLeft', ']': 'BracketRight',
-      '`': 'Backquote', '-': 'Minus', '=': 'Equal',
-      '\\': 'Backslash', ';': 'Semicolon', "'": 'Quote',
-      ',': 'Comma', '.': 'Period', '/': 'Slash',
-      'INSERT': 'Insert', 'DELETE': 'Delete',
-      'HOME': 'Home', 'END': 'End',
-      'PAGEUP': 'PageUp', 'PAGEDOWN': 'PageDown',
-      'UP': 'ArrowUp', 'DOWN': 'ArrowDown',
-      'LEFT': 'ArrowLeft', 'RIGHT': 'ArrowRight',
-      'SCROLLLOCK': 'ScrollLock', 'PAUSE': 'Pause',
-      'NUMLOCK': 'NumLock', 'PRINTSCREEN': 'PrintScreen',
+      "[": "BracketLeft",
+      "]": "BracketRight",
+      "`": "Backquote",
+      "-": "Minus",
+      "=": "Equal",
+      "\\": "Backslash",
+      ";": "Semicolon",
+      "'": "Quote",
+      ",": "Comma",
+      ".": "Period",
+      "/": "Slash",
+      INSERT: "Insert",
+      DELETE: "Delete",
+      HOME: "Home",
+      END: "End",
+      PAGEUP: "PageUp",
+      PAGEDOWN: "PageDown",
+      UP: "ArrowUp",
+      DOWN: "ArrowDown",
+      LEFT: "ArrowLeft",
+      RIGHT: "ArrowRight",
+      SCROLLLOCK: "ScrollLock",
+      PAUSE: "Pause",
+      NUMLOCK: "NumLock",
+      PRINTSCREEN: "PrintScreen",
     };
     return codeMap[upper] || codeMap[key] || key;
   }
 
   async function loadKeybindings() {
     try {
-      keybindings = await invoke('cmd_get_keybindings');
+      keybindings = await invoke("cmd_get_keybindings");
     } catch (e) {
       console.error("Failed to load keybindings:", e);
     }
@@ -99,13 +121,15 @@
   async function checkForUpdates() {
     try {
       updateStatus = "checking";
-      const result = await invoke('check_for_update', { currentVersion: APP_VERSION });
+      const result = await invoke("check_for_update", {
+        currentVersion: APP_VERSION,
+      });
       if (result) {
         updateAvailable = result;
       }
       updateStatus = "idle";
     } catch (e) {
-      console.log('Update check failed:', e);
+      console.log("Update check failed:", e);
       updateStatus = "idle";
     }
   }
@@ -115,9 +139,9 @@
     try {
       updateStatus = "downloading";
       updateError = "";
-      downloadedPath = await invoke('download_update', {
+      downloadedPath = await invoke("download_update", {
         downloadUrl: updateAvailable.download_url,
-        fileName: updateAvailable.file_name
+        fileName: updateAvailable.file_name,
       });
       updateStatus = "downloaded";
     } catch (e) {
@@ -130,7 +154,7 @@
     if (!downloadedPath) return;
     try {
       updateStatus = "installing";
-      await invoke('install_update', { zipPath: downloadedPath });
+      await invoke("install_update", { zipPath: downloadedPath });
     } catch (e) {
       updateStatus = "error";
       updateError = e.toString();
@@ -139,7 +163,7 @@
 
   async function checkGameWindow() {
     try {
-      gameFound = await invoke('is_game_window_found');
+      gameFound = await invoke("is_game_window_found");
     } catch {
       gameFound = false;
     }
@@ -163,28 +187,28 @@
       const newPos = `${pos.x},${pos.y},${size.width},${size.height}`;
       if (newPos !== lastSavedPosition) {
         lastSavedPosition = newPos;
-        await invoke('save_window_position', {
+        await invoke("save_window_position", {
           x: pos.x,
           y: pos.y,
           width: size.width,
-          height: size.height
+          height: size.height,
         });
       }
     } catch (e) {
-      console.error('Failed to save window position:', e);
+      console.error("Failed to save window position:", e);
     }
   }
 
   async function loadWindowPosition() {
     try {
-      const saved = await invoke('get_window_position');
+      const saved = await invoke("get_window_position");
       if (saved) {
         const appWindow = getCurrentWindow();
         await appWindow.setPosition(new PhysicalPosition(saved.x, saved.y));
         await appWindow.setSize(new PhysicalSize(saved.width, saved.height));
       }
     } catch (e) {
-      console.error('Failed to load window position:', e);
+      console.error("Failed to load window position:", e);
     }
   }
 
@@ -192,9 +216,9 @@
     try {
       showCloseConfirmModal = false;
       await saveWindowPosition();
-      await invoke('cmd_exit_app');
+      await invoke("cmd_exit_app");
     } catch (e) {
-      console.error('Failed to close app:', e);
+      console.error("Failed to close app:", e);
     }
   }
 
@@ -216,19 +240,32 @@
   import SettingsView from "./lib/components/SettingsView.svelte";
   import StatsView from "./lib/components/StatsView.svelte";
   import LivePlayView from "./lib/components/LivePlayView.svelte";
+  import DonateView from "./lib/components/DonateView.svelte";
   import Visualizer from "./lib/components/Visualizer.svelte";
   import BandMode from "./lib/components/BandMode.svelte";
   import LibraryShare from "./lib/components/LibraryShare.svelte";
 
-  import { bandStatus, connectedPeers, bandSongSelectMode, cancelBandSongSelect, bandSelectedSong } from "./lib/stores/band.js";
-  import { libraryConnected, onlinePeers, initLibrary, shareNotification, libraryEnabled } from "./lib/stores/library.js";
+  import {
+    bandStatus,
+    connectedPeers,
+    bandSongSelectMode,
+    cancelBandSongSelect,
+    bandSelectedSong,
+  } from "./lib/stores/band.js";
+  import {
+    libraryConnected,
+    onlinePeers,
+    initLibrary,
+    shareNotification,
+    libraryEnabled,
+  } from "./lib/stores/library.js";
 
   // DEV: Simulate share notification for testing
   function simulateShareNotification() {
     shareNotification.set({
       songName: "Test Song - Example MIDI File.mid",
       peerName: "HappyMusician42",
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
@@ -273,26 +310,84 @@
     libraryPlayShuffle,
     libraryPlayIndex,
     exitLibraryPlayMode,
+    playbackContext,
+    shuffleMode,
   } from "./lib/stores/player.js";
-
 
   // Note mode options for quick selector (reactive for i18n)
   $: noteModeOptionsList = [
-    { id: "Python", title: $t("noteMode.yuelyn"), short: "YL", icon: "mdi:heart", desc: $t("noteMode.yuelynDesc"), rmd21: true },
-    { id: "Closest", title: $t("noteMode.closest"), short: "CLS", icon: "mdi:target", desc: $t("noteMode.closestDesc") },
-    { id: "Wide", title: $t("noteMode.wide"), short: "WDE", icon: "mdi:arrow-expand-horizontal", desc: $t("noteMode.wideDesc") },
-    { id: "Sharps", title: $t("noteMode.sharps"), short: "SHP", icon: "mdi:music-accidental-sharp", desc: $t("noteMode.sharpsDesc"), rmd36: true },
-    { id: "Quantize", title: $t("noteMode.quantize"), short: "QNT", icon: "mdi:grid", desc: $t("noteMode.quantizeDesc") },
-    { id: "TransposeOnly", title: $t("noteMode.transposeOnly"), short: "TRP", icon: "mdi:arrow-up-down", desc: $t("noteMode.transposeOnlyDesc") },
-    { id: "Pentatonic", title: $t("noteMode.pentatonic"), short: "PEN", icon: "mdi:music", desc: $t("noteMode.pentatonicDesc") },
-    { id: "Chromatic", title: $t("noteMode.chromatic"), short: "CHR", icon: "mdi:piano", desc: $t("noteMode.chromaticDesc") },
-    { id: "Raw", title: $t("noteMode.raw"), short: "RAW", icon: "mdi:code-braces", desc: $t("noteMode.rawDesc") },
+    {
+      id: "Python",
+      title: $t("noteMode.yuelyn"),
+      short: "YL",
+      icon: "mdi:heart",
+      desc: $t("noteMode.yuelynDesc"),
+      rmd21: true,
+    },
+    {
+      id: "Closest",
+      title: $t("noteMode.closest"),
+      short: "CLS",
+      icon: "mdi:target",
+      desc: $t("noteMode.closestDesc"),
+    },
+    {
+      id: "Wide",
+      title: $t("noteMode.wide"),
+      short: "WDE",
+      icon: "mdi:arrow-expand-horizontal",
+      desc: $t("noteMode.wideDesc"),
+    },
+    {
+      id: "Sharps",
+      title: $t("noteMode.sharps"),
+      short: "SHP",
+      icon: "mdi:music-accidental-sharp",
+      desc: $t("noteMode.sharpsDesc"),
+      rmd36: true,
+    },
+    {
+      id: "Quantize",
+      title: $t("noteMode.quantize"),
+      short: "QNT",
+      icon: "mdi:grid",
+      desc: $t("noteMode.quantizeDesc"),
+    },
+    {
+      id: "TransposeOnly",
+      title: $t("noteMode.transposeOnly"),
+      short: "TRP",
+      icon: "mdi:arrow-up-down",
+      desc: $t("noteMode.transposeOnlyDesc"),
+    },
+    {
+      id: "Pentatonic",
+      title: $t("noteMode.pentatonic"),
+      short: "PEN",
+      icon: "mdi:music",
+      desc: $t("noteMode.pentatonicDesc"),
+    },
+    {
+      id: "Chromatic",
+      title: $t("noteMode.chromatic"),
+      short: "CHR",
+      icon: "mdi:piano",
+      desc: $t("noteMode.chromaticDesc"),
+    },
+    {
+      id: "Raw",
+      title: $t("noteMode.raw"),
+      short: "RAW",
+      icon: "mdi:code-braces",
+      desc: $t("noteMode.rawDesc"),
+    },
   ];
 
   // Reactive: show RMD based on key mode
-  $: noteModeOptions = noteModeOptionsList.map(m => ({
+  $: noteModeOptions = noteModeOptionsList.map((m) => ({
     ...m,
-    isRmd: ($keyMode === 'Keys36' && m.rmd36) || ($keyMode === 'Keys21' && m.rmd21)
+    isRmd:
+      ($keyMode === "Keys36" && m.rmd36) || ($keyMode === "Keys21" && m.rmd21),
   }));
 
   let showModeMenu = false;
@@ -303,6 +398,7 @@
   let showUpdateModal = false;
   let showLargeLibraryModal = false;
   let showCloseConfirmModal = false;
+  let showAboutModal = false;
   let largeLibraryCount = 0;
 
   // Load tracks when current file changes
@@ -335,14 +431,15 @@
   }
 
   function nextNoteMode() {
-    const currentIndex = noteModeOptions.findIndex(m => m.id === $noteMode);
+    const currentIndex = noteModeOptions.findIndex((m) => m.id === $noteMode);
     const nextIndex = (currentIndex + 1) % noteModeOptions.length;
     setNoteMode(noteModeOptions[nextIndex].id);
   }
 
   function prevNoteMode() {
-    const currentIndex = noteModeOptions.findIndex(m => m.id === $noteMode);
-    const prevIndex = (currentIndex - 1 + noteModeOptions.length) % noteModeOptions.length;
+    const currentIndex = noteModeOptions.findIndex((m) => m.id === $noteMode);
+    const prevIndex =
+      (currentIndex - 1 + noteModeOptions.length) % noteModeOptions.length;
     setNoteMode(noteModeOptions[prevIndex].id);
   }
 
@@ -361,7 +458,7 @@
   let sidebarTab = "music"; // "music", "online", or "app"
 
   // Band mode connected peers count (excluding self)
-  $: bandPeersCount = $bandStatus === 'connected' ? $connectedPeers.length : 0;
+  $: bandPeersCount = $bandStatus === "connected" ? $connectedPeers.length : 0;
   $: libraryPeersCount = $libraryConnected ? $onlinePeers : 0;
 
   // Auto-dismiss share notification after 5 seconds
@@ -379,15 +476,47 @@
   }
 
   $: musicNavItems = [
-    { id: "library", icon: "mdi:library-music", label: $t("nav.library"), badge: 0 },
-    { id: "queue", icon: "mdi:playlist-play", label: $t("nav.queue"), badge: queueCount },
-    { id: "favorites", icon: "mdi:heart", label: $t("nav.favorites"), badge: favoritesCount },
-    { id: "playlists", icon: "mdi:folder-music", label: $t("nav.playlists"), badge: playlistsCount },
+    {
+      id: "library",
+      icon: "mdi:library-music",
+      label: $t("nav.library"),
+      badge: 0,
+    },
+    {
+      id: "queue",
+      icon: "mdi:playlist-play",
+      label: $t("nav.queue"),
+      badge: queueCount,
+    },
+    {
+      id: "favorites",
+      icon: "mdi:heart",
+      label: $t("nav.favorites"),
+      badge: favoritesCount,
+    },
+    {
+      id: "playlists",
+      icon: "mdi:folder-music",
+      label: $t("nav.playlists"),
+      badge: playlistsCount,
+    },
   ];
 
   $: onlineNavItems = [
-    { id: "band", icon: "mdi:account-group", label: $t("nav.band"), badge: bandPeersCount, status: $bandStatus },
-    { id: "share", icon: "mdi:earth", label: $t("nav.share"), badge: libraryPeersCount, status: $libraryConnected ? 'connected' : 'disconnected' },
+    {
+      id: "band",
+      icon: "mdi:account-group",
+      label: $t("nav.band"),
+      badge: bandPeersCount,
+      status: $bandStatus,
+    },
+    {
+      id: "share",
+      icon: "mdi:earth",
+      label: $t("nav.share"),
+      badge: libraryPeersCount,
+      status: $libraryConnected ? "connected" : "disconnected",
+    },
   ];
 
   $: appNavItems = [
@@ -396,7 +525,12 @@
     { id: "stats", icon: "mdi:chart-bar", label: $t("nav.stats"), badge: 0 },
   ];
 
-  $: navItems = sidebarTab === "music" ? musicNavItems : sidebarTab === "online" ? onlineNavItems : appNavItems;
+  $: navItems =
+    sidebarTab === "music"
+      ? musicNavItems
+      : sidebarTab === "online"
+        ? onlineNavItems
+        : appNavItems;
 
   // Reactive shortcuts based on custom keybindings
   $: shortcuts = [
@@ -404,12 +538,18 @@
     { action: $t("player.stop"), key: `${keybindings.stop} / End` },
     { action: $t("player.previous"), key: keybindings.previous },
     { action: $t("player.next"), key: keybindings.next },
-    { action: $t("controls.mode"), key: `${keybindings.mode_prev} / ${keybindings.mode_next}` },
+    {
+      action: $t("controls.mode"),
+      key: `${keybindings.mode_prev} / ${keybindings.mode_next}`,
+    },
   ];
 
   // Check if current song is favorited
-  $: currentFileIsFavorite = $currentFile && $favorites.some(f => f.path === $currentFile);
-  $: currentFileData = $currentFile ? $midiFiles.find(f => f.path === $currentFile) : null;
+  $: currentFileIsFavorite =
+    $currentFile && $favorites.some((f) => f.path === $currentFile);
+  $: currentFileData = $currentFile
+    ? $midiFiles.find((f) => f.path === $currentFile)
+    : null;
 
   function toggleCurrentFavorite() {
     if (currentFileData) {
@@ -438,12 +578,15 @@
   }
 
   onMount(async () => {
-    await loadWindowPosition(); // Restore window position
-    await loadAlwaysOnTop(); // Restore always on top setting
-    initUserLocales(); // Initialize user locale files (async, don't await)
+    if (isTauri) {
+      await loadWindowPosition(); // Restore window position
+      await loadAlwaysOnTop(); // Restore always on top setting
+      initUserLocales(); // Initialize user locale files (async, don't await)
+    }
 
     // Check library size AND cache status before loading
-    const { needsWarning, isLarge, count, isCached } = await shouldShowLibraryWarning();
+    const { needsWarning, isLarge, count, isCached } =
+      await shouldShowLibraryWarning();
 
     if (needsWarning) {
       // Large library with uncached files - show warning (first time only)
@@ -476,16 +619,23 @@
         showUpdateModal = true;
       }
     };
-    window.addEventListener('open-update-modal', handleOpenUpdateModal);
+    window.addEventListener("open-update-modal", handleOpenUpdateModal);
 
     // Listen for keybindings changes from SettingsView
     const handleKeybindingsChanged = (event) => {
       keybindings = event.detail;
     };
-    window.addEventListener('keybindings-changed', handleKeybindingsChanged);
+    window.addEventListener("keybindings-changed", handleKeybindingsChanged);
 
     // Listen for global shortcut events from Rust backend
+    if (!isTauri) return;
+    let lastShortcutTime = 0;
     const unlisten = await listen("global-shortcut", async (event) => {
+      // Prevent double triggers within 150ms and ignore while recording keybinds
+      const now = Date.now();
+      if (now - lastShortcutTime < 150 || $recordingKeybind) return;
+      lastShortcutTime = now;
+
       const action = event.payload;
       console.log(`Global shortcut received: ${action}`);
 
@@ -519,8 +669,11 @@
 
     return () => {
       unlisten();
-      window.removeEventListener('open-update-modal', handleOpenUpdateModal);
-      window.removeEventListener('keybindings-changed', handleKeybindingsChanged);
+      window.removeEventListener("open-update-modal", handleOpenUpdateModal);
+      window.removeEventListener(
+        "keybindings-changed",
+        handleKeybindingsChanged,
+      );
     };
   });
 
@@ -537,7 +690,10 @@
     if ($recordingKeybind) return;
 
     // Skip if user is typing in an input
-    if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+    if (
+      event.target.tagName === "INPUT" ||
+      event.target.tagName === "TEXTAREA"
+    ) {
       return;
     }
 
@@ -547,7 +703,7 @@
     if (code === keyToCode(keybindings.pause_resume)) {
       event.preventDefault();
       await pauseResume();
-    } else if (code === keyToCode(keybindings.stop) || code === 'End') {
+    } else if (code === keyToCode(keybindings.stop) || code === "End") {
       event.preventDefault();
       await stopPlayback();
     } else if (code === keyToCode(keybindings.previous)) {
@@ -606,7 +762,7 @@
 
     <!-- Clickable Icon -->
     <button
-      class="w-14 h-14 rounded-2xl bg-[#18181893] border border-white/10 shadow-2xl overflow-hidden relative flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
+      class="w-14 h-14 rounded-2xl bg-black/90 border border-white/15 shadow-2xl overflow-hidden relative flex items-center justify-center cursor-pointer active:scale-95 transition-transform backdrop-blur-xl"
       onclick={toggleMiniMode}
       title="Click to expand"
     >
@@ -626,11 +782,11 @@
     </button>
   </div>
 {:else}
-  <main class="">
+  <main class="h-screen w-full bg-transparent">
     <div
-      class="h-screen w-full flex flex-col overflow-hidden rounded-md select-none {$isDraggable
+      class="h-screen w-full flex flex-col overflow-hidden rounded-xl border border-white/[0.08] shadow-2xl backdrop-blur-xl select-none {$isDraggable
         ? ''
-        : 'pointer-events-none'}"
+        : 'pointer-events-none'} bg-black/50"
     >
       {#if !$isMinimized}
         <!-- Spotify-style layout -->
@@ -640,9 +796,7 @@
             class="spotify-sidebar w-56 flex flex-col p-4 gap-2 no-drag border-r border-white/5"
           >
             <!-- Drag Handle with Window Controls -->
-            <div
-              class="flex items-center gap-1 py-2 -mx-4 -mt-4 mb-2 px-2"
-            >
+            <div class="flex items-center gap-1 py-2 -mx-4 -mt-4 mb-2 px-2">
               <div
                 class="drag-handle flex-1 flex items-center justify-center cursor-move hover:bg-white/5 transition-colors group py-1 rounded"
                 title="Drag to move window"
@@ -654,11 +808,18 @@
               </div>
               <div class="flex items-center gap-0.5">
                 <button
-                  class="w-7 h-7 flex items-center justify-center rounded-md transition-all {isAlwaysOnTop ? 'text-[#1db954] bg-[#1db954]/10' : 'text-white/40 hover:text-white hover:bg-white/10'}"
+                  class="w-7 h-7 flex items-center justify-center rounded-md transition-all {isAlwaysOnTop
+                    ? 'text-[#1db954] bg-[#1db954]/10'
+                    : 'text-white/40 hover:text-white hover:bg-white/10'}"
                   onclick={toggleAlwaysOnTop}
-                  title={isAlwaysOnTop ? 'Disable always on top' : 'Enable always on top'}
+                  title={isAlwaysOnTop
+                    ? "Disable always on top"
+                    : "Enable always on top"}
                 >
-                  <Icon icon={isAlwaysOnTop ? "mdi:pin" : "mdi:pin-off"} class="w-3.5 h-3.5" />
+                  <Icon
+                    icon={isAlwaysOnTop ? "mdi:pin" : "mdi:pin-off"}
+                    class="w-3.5 h-3.5"
+                  />
                 </button>
                 <button
                   class="w-7 h-7 flex items-center justify-center rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-all"
@@ -669,7 +830,7 @@
                 </button>
                 <button
                   class="w-7 h-7 flex items-center justify-center rounded-md text-white/40 hover:text-red-400 hover:bg-red-400/10 transition-all"
-                  onclick={() => showCloseConfirmModal = true}
+                  onclick={() => (showCloseConfirmModal = true)}
                   title="Close application"
                 >
                   <Icon icon="mdi:close" class="w-4 h-4" />
@@ -686,23 +847,43 @@
             <!-- Sidebar Tabs -->
             <div class="flex gap-1 mb-2">
               <button
-                class="flex-1 py-1.5 px-1 rounded-lg text-xs font-medium transition-all {sidebarTab === 'music' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white hover:bg-white/5'}"
-                onclick={() => { sidebarTab = 'music'; activeView = 'library'; }}
+                class="flex-1 py-1.5 px-1 rounded-lg text-xs font-medium transition-all {sidebarTab ===
+                'music'
+                  ? 'bg-white/10 text-white'
+                  : 'text-white/50 hover:text-white hover:bg-white/5'}"
+                onclick={() => {
+                  sidebarTab = "music";
+                  activeView = "library";
+                }}
               >
                 <Icon icon="mdi:music" class="w-3.5 h-3.5 inline" />
               </button>
               <button
-                class="flex-1 py-1.5 px-1 rounded-lg text-xs font-medium transition-all relative {sidebarTab === 'online' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white hover:bg-white/5'}"
-                onclick={() => { sidebarTab = 'online'; activeView = 'band'; }}
+                class="flex-1 py-1.5 px-1 rounded-lg text-xs font-medium transition-all relative {sidebarTab ===
+                'online'
+                  ? 'bg-white/10 text-white'
+                  : 'text-white/50 hover:text-white hover:bg-white/5'}"
+                onclick={() => {
+                  sidebarTab = "online";
+                  activeView = "band";
+                }}
               >
                 <Icon icon="mdi:access-point" class="w-3.5 h-3.5 inline" />
-                {#if $bandStatus === 'connected'}
-                  <div class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                {#if $bandStatus === "connected"}
+                  <div
+                    class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-500"
+                  ></div>
                 {/if}
               </button>
               <button
-                class="flex-1 py-1.5 px-1 rounded-lg text-xs font-medium transition-all {sidebarTab === 'app' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white hover:bg-white/5'}"
-                onclick={() => { sidebarTab = 'app'; activeView = 'settings'; }}
+                class="flex-1 py-1.5 px-1 rounded-lg text-xs font-medium transition-all {sidebarTab ===
+                'app'
+                  ? 'bg-white/10 text-white'
+                  : 'text-white/50 hover:text-white hover:bg-white/5'}"
+                onclick={() => {
+                  sidebarTab = "app";
+                  activeView = "settings";
+                }}
               >
                 <Icon icon="mdi:cog" class="w-3.5 h-3.5 inline" />
               </button>
@@ -735,7 +916,14 @@
                   </div>
                   <span class="font-medium text-sm">{item.label}</span>
                   {#if item.status}
-                    <div class="ml-auto w-2 h-2 rounded-full {item.status === 'connected' ? 'bg-green-500' : item.status === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-white/20'}"></div>
+                    <div
+                      class="ml-auto w-2 h-2 rounded-full {item.status ===
+                      'connected'
+                        ? 'bg-green-500'
+                        : item.status === 'connecting'
+                          ? 'bg-yellow-500 animate-pulse'
+                          : 'bg-white/20'}"
+                    ></div>
                   {:else if item.badge > 0}
                     <span
                       class="ml-auto text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/60"
@@ -761,19 +949,37 @@
               <span class="font-medium text-sm">Refresh</span>
             </button> -->
 
-            <p class="text-xs text-white/40 px-3">By YueLyn · v{APP_VERSION}{APP_FLAVOR ? `(${APP_FLAVOR})` : ''}</p>
+            <!-- Sidebar Footer Buttons -->
+            <div class="px-3 mb-1 flex flex-col gap-1.5">
+              <button
+                class="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 transition-all text-[10px] font-bold group border border-white/5"
+                onclick={() => (showAboutModal = true)}
+                title="About Vùng Đất Chill"
+              >
+                <Icon
+                  icon="mdi:information-outline"
+                  class="w-3.5 h-3.5 group-hover:rotate-12 transition-transform"
+                />
+                <span class="truncate">Vùng Đất Chill · v{APP_VERSION}</span>
+              </button>
 
-            <!-- Ko-fi Support -->
-            <button
-              onclick={() => invoke('open_url', { url: 'https://ko-fi.com/snowiy' })}
-              class="flex items-center gap-2 px-3 py-2 rounded-lg text-white/60 hover:text-[#ff5e5b] hover:bg-[#ff5e5b]/10 transition-all w-full mt-1"
-              title={$t("common.supportOnKofi")}
-            >
-              <Icon icon="simple-icons:kofi" class="w-4 h-4" />
-              <span class="text-xs">{$t("common.supportOnKofi")}</span>
-            </button>
+              <button
+                class="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-[#1db954]/10 hover:bg-[#1db954]/20 text-[#1db954] transition-all text-xs font-bold group border border-[#1db954]/10"
+                onclick={() => {
+                  activeView = "donate";
+                }}
+                title="Support the project / Ủng hộ dự án"
+              >
+                <Icon
+                  icon="mdi:hand-heart"
+                  class="w-4 h-4 group-hover:scale-110 transition-transform"
+                />
+                <span>Ủng hộ dự án</span>
+              </button>
+            </div>
+
             <!-- Keyboard Shortcuts Info -->
-            <div class="px-3 py-3 bg-white/5 rounded-lg mt-2">
+            <div class="px-3 py-3 bg-white/5 rounded-lg mt-1">
               <p
                 class="text-xs font-semibold text-white/60 mb-2 flex items-center gap-2"
               >
@@ -825,6 +1031,8 @@
                     <SettingsView />
                   {:else if activeView === "live"}
                     <LivePlayView />
+                  {:else if activeView === "donate"}
+                    <DonateView />
                   {/if}
                 </div>
               {/key}
@@ -848,7 +1056,9 @@
           <div class="flex items-center gap-4 w-64">
             <div
               class="relative w-12 h-12 rounded bg-white/5 flex items-center justify-center flex-shrink-0"
-              title={gameFound ? $t("common.gameFound") : $t("common.gameNotFound")}
+              title={gameFound
+                ? $t("common.gameFound")
+                : $t("common.gameNotFound")}
             >
               {#if $currentFile}
                 <Icon icon="mdi:music-note" class="w-6 h-6 text-[#1db954]" />
@@ -856,10 +1066,24 @@
                 <Icon icon="mdi:music-note-off" class="w-6 h-6 text-white/30" />
               {/if}
               <!-- Game Status Dot -->
-              <div class="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] {gameFound ? 'bg-[#1db954]' : 'bg-red-500'} {gameFound && $isPlaying ? 'animate-pulse' : ''}"></div>
-              <!-- Library Mode Indicator Dot -->
-              {#if $libraryPlayMode}
-                <div class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] bg-purple-500" title={$t("player.libraryPlayMode")}></div>
+              <div
+                class="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] {gameFound
+                  ? 'bg-[#1db954]'
+                  : 'bg-red-500'} {gameFound && $isPlaying
+                  ? 'animate-pulse'
+                  : ''}"
+              ></div>
+              <!-- Context Mode Indicator Dot -->
+              {#if $playbackContext && $playbackContext.tracks && $playbackContext.tracks.length > 0}
+                <div
+                  class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] bg-purple-500"
+                  title={$playbackContext.name || "Context"}
+                ></div>
+              {:else if $libraryPlayMode}
+                <div
+                  class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] bg-purple-500"
+                  title={$t("player.libraryPlayMode")}
+                ></div>
               {/if}
             </div>
             <div class="min-w-0 flex-1">
@@ -867,10 +1091,31 @@
                 {filename($currentFile, $t("player.noTrackSelected"))}
               </p>
               <p class="text-xs text-white/50 truncate">
-                {#if $libraryPlayMode}
+                {#if $playbackContext && $playbackContext.tracks && $playbackContext.tracks.length > 0}
                   <span class="text-purple-400 flex items-center gap-1">
-                    <Icon icon={$libraryPlayShuffle ? "mdi:shuffle" : "mdi:library-music"} class="w-3 h-3 inline" />
-                    {$libraryPlayShuffle ? $t("player.shuffle") : $t("nav.library")} • {($libraryPlayIndex + 1).toLocaleString()} / {$midiFiles.length.toLocaleString()}
+                    <Icon
+                      icon={$shuffleMode
+                        ? "mdi:shuffle"
+                        : "mdi:playlist-music"}
+                      class="w-3 h-3 inline"
+                    />
+                    {$playbackContext.name || ($playbackContext.source === 'library' ? $t("nav.library") : $playbackContext.source)} • {(
+                      $playbackContext.index + 1
+                    ).toLocaleString()} / {$playbackContext.tracks.length.toLocaleString()}
+                  </span>
+                {:else if $libraryPlayMode}
+                  <span class="text-purple-400 flex items-center gap-1">
+                    <Icon
+                      icon={$libraryPlayShuffle
+                        ? "mdi:shuffle"
+                        : "mdi:library-music"}
+                      class="w-3 h-3 inline"
+                    />
+                    {$libraryPlayShuffle
+                      ? $t("player.shuffle")
+                      : $t("nav.library")} • {(
+                      $libraryPlayIndex + 1
+                    ).toLocaleString()} / {$midiFiles.length.toLocaleString()}
                   </span>
                 {:else if $playlist.length > 0}
                   {$playlist.length} {$t("library.tracks")}
@@ -891,11 +1136,20 @@
               {/if}
               {#if $currentFile}
                 <button
-                  class="p-1.5 rounded-full transition-all {currentFileIsFavorite ? 'text-[#1db954]' : 'text-white/30 hover:text-white'}"
+                  class="p-1.5 rounded-full transition-all {currentFileIsFavorite
+                    ? 'text-[#1db954]'
+                    : 'text-white/30 hover:text-white'}"
                   onclick={toggleCurrentFavorite}
-                  title={currentFileIsFavorite ? "Remove from favorites" : "Add to favorites"}
+                  title={currentFileIsFavorite
+                    ? "Remove from favorites"
+                    : "Add to favorites"}
                 >
-                  <Icon icon={currentFileIsFavorite ? "mdi:heart" : "mdi:heart-outline"} class="w-5 h-5" />
+                  <Icon
+                    icon={currentFileIsFavorite
+                      ? "mdi:heart"
+                      : "mdi:heart-outline"}
+                    class="w-5 h-5"
+                  />
                 </button>
               {/if}
             </div>
@@ -910,18 +1164,35 @@
               <!-- Speed -->
               <div class="relative">
                 <button
-                  class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium {$speed !== 1.0 ? 'bg-[#1db954]/20 text-[#1db954]' : 'text-white/50 hover:text-white hover:bg-white/5'}"
-                  onclick={() => showSpeedMenu = !showSpeedMenu}
+                  class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium {$speed !==
+                  1.0
+                    ? 'bg-[#1db954]/20 text-[#1db954]'
+                    : 'text-white/50 hover:text-white hover:bg-white/5'}"
+                  onclick={() => (showSpeedMenu = !showSpeedMenu)}
                   title="Playback speed"
                 >
                   <Icon icon="mdi:speedometer" class="w-3.5 h-3.5" />
                   <span>{$speed}x</span>
                 </button>
                 {#if showSpeedMenu}
-                  <button class="fixed inset-0 z-40" onclick={() => showSpeedMenu = false}></button>
-                  <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-[#282828] rounded-lg shadow-xl border border-white/10 overflow-hidden z-50 min-w-[90px]" in:fly={{ y: 5, duration: 150 }} out:fade={{ duration: 100 }}>
+                  <button
+                    class="fixed inset-0 z-40"
+                    onclick={() => (showSpeedMenu = false)}
+                  ></button>
+                  <div
+                    class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-[#282828] rounded-lg shadow-xl border border-white/10 overflow-hidden z-50 min-w-[90px]"
+                    in:fly={{ y: 5, duration: 150 }}
+                    out:fade={{ duration: 100 }}
+                  >
                     {#each speedOptions as option}
-                      <button class="w-full px-3 py-1.5 text-xs text-left transition-colors {$speed === option.value ? 'bg-[#1db954]/20 text-[#1db954]' : 'text-white/70 hover:bg-white/5'}" onclick={() => selectSpeed(option.value)}>{option.label}</button>
+                      <button
+                        class="w-full px-3 py-1.5 text-xs text-left transition-colors {$speed ===
+                        option.value
+                          ? 'bg-[#1db954]/20 text-[#1db954]'
+                          : 'text-white/70 hover:bg-white/5'}"
+                        onclick={() => selectSpeed(option.value)}
+                        >{option.label}</button
+                      >
                     {/each}
                   </div>
                 {/if}
@@ -929,21 +1200,47 @@
 
               <!-- Key Mode -->
               <button
-                class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium {$keyMode === 'Keys36' ? 'bg-[#1db954]/20 text-[#1db954]' : 'text-white/50 hover:text-white hover:bg-white/5'}"
-                onclick={() => setKeyMode($keyMode === 'Keys21' ? 'Keys36' : 'Keys21')}
-                title={$keyMode === 'Keys21' ? '21 keys (natural notes)' : '36 keys (with sharps/flats)'}
+                class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium {$keyMode ===
+                'Keys36'
+                  ? 'bg-[#1db954]/20 text-[#1db954]'
+                  : 'text-white/50 hover:text-white hover:bg-white/5'}"
+                onclick={() =>
+                  setKeyMode($keyMode === "Keys21" ? "Keys36" : "Keys21")}
+                title={$keyMode === "Keys21"
+                  ? "21 keys (natural notes)"
+                  : "36 keys (with sharps/flats)"}
               >
                 <Icon icon="mdi:piano" class="w-3.5 h-3.5" />
-                <span>{$keyMode === 'Keys21' ? '21' : '36'}</span>
+                <span>{$keyMode === "Keys21" ? "21" : "36"}</span>
               </button>
 
               <!-- Octave -->
-              <div class="flex items-center gap-1 px-1 py-0.5 rounded-md bg-white/5">
-                <button class="w-5 h-5 flex items-center justify-center rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30" onclick={() => setOctaveShift($octaveShift - 1)} disabled={$octaveShift <= -2} title="Lower octave">
+              <div
+                class="flex items-center gap-1 px-1 py-0.5 rounded-md bg-white/5"
+              >
+                <button
+                  class="w-5 h-5 flex items-center justify-center rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30"
+                  onclick={() => setOctaveShift($octaveShift - 1)}
+                  disabled={$octaveShift <= -2}
+                  title="Lower octave"
+                >
                   <Icon icon="mdi:minus" class="w-3 h-3" />
                 </button>
-                <span class="text-xs font-mono w-6 text-center {$octaveShift === 0 ? 'text-white/50' : $octaveShift > 0 ? 'text-[#1db954]' : 'text-orange-400'}" title="Octave shift">{$octaveShift > 0 ? '+' : ''}{$octaveShift}</span>
-                <button class="w-5 h-5 flex items-center justify-center rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30" onclick={() => setOctaveShift($octaveShift + 1)} disabled={$octaveShift >= 2} title="Higher octave">
+                <span
+                  class="text-xs font-mono w-6 text-center {$octaveShift === 0
+                    ? 'text-white/50'
+                    : $octaveShift > 0
+                      ? 'text-[#1db954]'
+                      : 'text-orange-400'}"
+                  title="Octave shift"
+                  >{$octaveShift > 0 ? "+" : ""}{$octaveShift}</span
+                >
+                <button
+                  class="w-5 h-5 flex items-center justify-center rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30"
+                  onclick={() => setOctaveShift($octaveShift + 1)}
+                  disabled={$octaveShift >= 2}
+                  title="Higher octave"
+                >
                   <Icon icon="mdi:plus" class="w-3 h-3" />
                 </button>
               </div>
@@ -951,15 +1248,28 @@
               <!-- Mode -->
               <div class="relative">
                 <button
-                  class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium {$noteMode === 'Python' ? 'bg-pink-500/20 text-pink-400' : 'text-white/50 hover:text-white hover:bg-white/5'}"
-                  onclick={() => showModeMenu = !showModeMenu}
+                  class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium {$noteMode ===
+                  'Python'
+                    ? 'bg-pink-500/20 text-pink-400'
+                    : 'text-white/50 hover:text-white hover:bg-white/5'}"
+                  onclick={() => (showModeMenu = !showModeMenu)}
                   title="Note calculation mode"
                 >
-                  <Icon icon={noteModeOptions.find(m => m.id === $noteMode)?.icon || "mdi:music-note"} class="w-3.5 h-3.5" />
-                  <span>{noteModeOptions.find(m => m.id === $noteMode)?.short || "CLS"}</span>
+                  <Icon
+                    icon={noteModeOptions.find((m) => m.id === $noteMode)
+                      ?.icon || "mdi:music-note"}
+                    class="w-3.5 h-3.5"
+                  />
+                  <span
+                    >{noteModeOptions.find((m) => m.id === $noteMode)?.short ||
+                      "CLS"}</span
+                  >
                 </button>
                 {#if showModeMenu}
-                  <button class="fixed inset-0 z-40" onclick={() => showModeMenu = false}></button>
+                  <button
+                    class="fixed inset-0 z-40"
+                    onclick={() => (showModeMenu = false)}
+                  ></button>
                   <div
                     class="absolute bottom-full right-0 mb-2 bg-[#282828] rounded-lg shadow-xl border border-white/10 overflow-hidden z-50 min-w-[200px]"
                     in:fly={{ y: 10, duration: 150 }}
@@ -968,21 +1278,46 @@
                     <div class="py-1">
                       {#each noteModeOptions as mode}
                         <button
-                          class="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors {$noteMode === mode.id ? 'bg-[#1db954]/20' : 'hover:bg-white/5'}"
+                          class="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors {$noteMode ===
+                          mode.id
+                            ? 'bg-[#1db954]/20'
+                            : 'hover:bg-white/5'}"
                           onclick={() => selectNoteMode(mode.id)}
                         >
-                          <Icon icon={mode.icon} class="w-4 h-4 flex-shrink-0 {$noteMode === mode.id ? 'text-[#1db954]' : 'text-white/50'}" />
+                          <Icon
+                            icon={mode.icon}
+                            class="w-4 h-4 flex-shrink-0 {$noteMode === mode.id
+                              ? 'text-[#1db954]'
+                              : 'text-white/50'}"
+                          />
                           <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-1.5 text-sm font-medium {$noteMode === mode.id ? 'text-[#1db954]' : 'text-white/90'}">
+                            <div
+                              class="flex items-center gap-1.5 text-sm font-medium {$noteMode ===
+                              mode.id
+                                ? 'text-[#1db954]'
+                                : 'text-white/90'}"
+                            >
                               {mode.title || mode.id}
                               {#if mode.isRmd}
-                                <span class="px-1.5 text-[10px] font-semibold bg-[#1db954]/20 text-[#1db954] rounded-full leading-4">RMD</span>
+                                <span
+                                  class="px-1.5 text-[10px] font-semibold bg-[#1db954]/20 text-[#1db954] rounded-full leading-4"
+                                  >RMD</span
+                                >
                               {/if}
                             </div>
-                            <div class="text-xs {$noteMode === mode.id ? 'text-[#1db954]/70' : 'text-white/40'}">{mode.desc}</div>
+                            <div
+                              class="text-xs {$noteMode === mode.id
+                                ? 'text-[#1db954]/70'
+                                : 'text-white/40'}"
+                            >
+                              {mode.desc}
+                            </div>
                           </div>
                           {#if $noteMode === mode.id}
-                            <Icon icon="mdi:check" class="w-4 h-4 text-[#1db954] flex-shrink-0" />
+                            <Icon
+                              icon="mdi:check"
+                              class="w-4 h-4 text-[#1db954] flex-shrink-0"
+                            />
                           {/if}
                         </button>
                       {/each}
@@ -992,11 +1327,14 @@
               </div>
 
               <!-- Track Selector (hidden in band mode) -->
-              {#if $availableTracks.length > 1 && $bandStatus !== 'connected'}
+              {#if $availableTracks.length > 1 && $bandStatus !== "connected"}
                 <div class="relative">
                   <button
-                    class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium {$selectedTrackId !== null ? 'bg-purple-500/20 text-purple-400' : 'text-white/50 hover:text-white hover:bg-white/5'}"
-                    onclick={() => showTrackMenu = !showTrackMenu}
+                    class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium {$selectedTrackId !==
+                    null
+                      ? 'bg-purple-500/20 text-purple-400'
+                      : 'text-white/50 hover:text-white hover:bg-white/5'}"
+                    onclick={() => (showTrackMenu = !showTrackMenu)}
                     title={$t("trackSelector.selectTrack")}
                   >
                     <Icon icon="mdi:playlist-music" class="w-3.5 h-3.5" />
@@ -1004,12 +1342,19 @@
                       {#if $selectedTrackId === null}
                         {$t("trackSelector.all")}
                       {:else}
-                        {$availableTracks.find(t => t.id === $selectedTrackId)?.name || $t("trackSelector.trackNum", { values: { num: $selectedTrackId + 1 } })}
+                        {$availableTracks.find((t) => t.id === $selectedTrackId)
+                          ?.name ||
+                          $t("trackSelector.trackNum", {
+                            values: { num: $selectedTrackId + 1 },
+                          })}
                       {/if}
                     </span>
                   </button>
                   {#if showTrackMenu}
-                    <button class="fixed inset-0 z-40" onclick={() => showTrackMenu = false}></button>
+                    <button
+                      class="fixed inset-0 z-40"
+                      onclick={() => (showTrackMenu = false)}
+                    ></button>
                     <div
                       class="absolute bottom-full right-0 mb-2 bg-[#282828] rounded-lg shadow-xl border border-white/10 overflow-hidden z-50 min-w-[180px] max-w-[250px] max-h-[300px] overflow-y-auto scrollbar-thin"
                       in:fly={{ y: 10, duration: 150 }}
@@ -1018,16 +1363,41 @@
                       <div class="py-1">
                         <!-- All tracks option -->
                         <button
-                          class="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors {$selectedTrackId === null ? 'bg-purple-500/20' : 'hover:bg-white/5'}"
+                          class="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors {$selectedTrackId ===
+                          null
+                            ? 'bg-purple-500/20'
+                            : 'hover:bg-white/5'}"
                           onclick={() => selectTrack(null)}
                         >
-                          <Icon icon="mdi:playlist-play" class="w-4 h-4 flex-shrink-0 {$selectedTrackId === null ? 'text-purple-400' : 'text-white/50'}" />
+                          <Icon
+                            icon="mdi:playlist-play"
+                            class="w-4 h-4 flex-shrink-0 {$selectedTrackId ===
+                            null
+                              ? 'text-purple-400'
+                              : 'text-white/50'}"
+                          />
                           <div class="flex-1 min-w-0">
-                            <div class="text-sm font-medium {$selectedTrackId === null ? 'text-purple-400' : 'text-white/90'}">{$t("trackSelector.allTracks")}</div>
-                            <div class="text-xs {$selectedTrackId === null ? 'text-purple-400/70' : 'text-white/40'}">{$t("trackSelector.playEverything")}</div>
+                            <div
+                              class="text-sm font-medium {$selectedTrackId ===
+                              null
+                                ? 'text-purple-400'
+                                : 'text-white/90'}"
+                            >
+                              {$t("trackSelector.allTracks")}
+                            </div>
+                            <div
+                              class="text-xs {$selectedTrackId === null
+                                ? 'text-purple-400/70'
+                                : 'text-white/40'}"
+                            >
+                              {$t("trackSelector.playEverything")}
+                            </div>
                           </div>
                           {#if $selectedTrackId === null}
-                            <Icon icon="mdi:check" class="w-4 h-4 text-purple-400 flex-shrink-0" />
+                            <Icon
+                              icon="mdi:check"
+                              class="w-4 h-4 text-purple-400 flex-shrink-0"
+                            />
                           {/if}
                         </button>
                         <!-- Divider -->
@@ -1035,16 +1405,43 @@
                         <!-- Individual tracks -->
                         {#each $availableTracks as track}
                           <button
-                            class="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors {$selectedTrackId === track.id ? 'bg-purple-500/20' : 'hover:bg-white/5'}"
+                            class="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors {$selectedTrackId ===
+                            track.id
+                              ? 'bg-purple-500/20'
+                              : 'hover:bg-white/5'}"
                             onclick={() => selectTrack(track.id)}
                           >
-                            <Icon icon="mdi:music-note" class="w-4 h-4 flex-shrink-0 {$selectedTrackId === track.id ? 'text-purple-400' : 'text-white/50'}" />
+                            <Icon
+                              icon="mdi:music-note"
+                              class="w-4 h-4 flex-shrink-0 {$selectedTrackId ===
+                              track.id
+                                ? 'text-purple-400'
+                                : 'text-white/50'}"
+                            />
                             <div class="flex-1 min-w-0">
-                              <div class="text-sm font-medium truncate {$selectedTrackId === track.id ? 'text-purple-400' : 'text-white/90'}">{track.name}</div>
-                              <div class="text-xs {$selectedTrackId === track.id ? 'text-purple-400/70' : 'text-white/40'}">{$t("trackSelector.notes", { values: { count: track.note_count } })}</div>
+                              <div
+                                class="text-sm font-medium truncate {$selectedTrackId ===
+                                track.id
+                                  ? 'text-purple-400'
+                                  : 'text-white/90'}"
+                              >
+                                {track.name}
+                              </div>
+                              <div
+                                class="text-xs {$selectedTrackId === track.id
+                                  ? 'text-purple-400/70'
+                                  : 'text-white/40'}"
+                              >
+                                {$t("trackSelector.notes", {
+                                  values: { count: track.note_count },
+                                })}
+                              </div>
                             </div>
                             {#if $selectedTrackId === track.id}
-                              <Icon icon="mdi:check" class="w-4 h-4 text-purple-400 flex-shrink-0" />
+                              <Icon
+                                icon="mdi:check"
+                                class="w-4 h-4 text-purple-400 flex-shrink-0"
+                              />
                             {/if}
                           </button>
                         {/each}
@@ -1068,7 +1465,7 @@
               {#if updateAvailable}
                 <button
                   class="flex items-center gap-1 px-2 py-1 rounded-md bg-[#1db954]/20 text-white hover:bg-[#1db954]/30 transition-colors text-xs font-medium"
-                  onclick={() => showUpdateModal = true}
+                  onclick={() => (showUpdateModal = true)}
                   title="New version available"
                 >
                   <Icon icon="mdi:download" class="w-3.5 h-3.5" />
@@ -1080,13 +1477,19 @@
               <div class="relative">
                 <button
                   class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium text-white/50 hover:text-white hover:bg-white/5"
-                  onclick={() => showLanguageMenu = !showLanguageMenu}
+                  onclick={() => (showLanguageMenu = !showLanguageMenu)}
                   title="Language"
                 >
-                  <Icon icon={$currentLanguageInfo?.flag || 'circle-flags:us'} class="w-4 h-4" />
+                  <Icon
+                    icon={$currentLanguageInfo?.flag || "circle-flags:us"}
+                    class="w-4 h-4"
+                  />
                 </button>
                 {#if showLanguageMenu}
-                  <button class="fixed inset-0 z-40" onclick={() => showLanguageMenu = false}></button>
+                  <button
+                    class="fixed inset-0 z-40"
+                    onclick={() => (showLanguageMenu = false)}
+                  ></button>
                   <div
                     class="absolute bottom-full right-0 mb-2 bg-[#282828] rounded-lg shadow-xl border border-white/10 overflow-hidden z-50 min-w-[140px]"
                     in:fly={{ y: 10, duration: 150 }}
@@ -1094,8 +1497,14 @@
                   >
                     {#each languages as lang}
                       <button
-                        class="w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors {$currentLanguage === lang.code ? 'bg-[#1db954]/20 text-[#1db954]' : 'text-white/80 hover:bg-white/5'}"
-                        onclick={() => { setLanguage(lang.code); showLanguageMenu = false; }}
+                        class="w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors {$currentLanguage ===
+                        lang.code
+                          ? 'bg-[#1db954]/20 text-[#1db954]'
+                          : 'text-white/80 hover:bg-white/5'}"
+                        onclick={() => {
+                          setLanguage(lang.code);
+                          showLanguageMenu = false;
+                        }}
                       >
                         <Icon icon={lang.flag} class="w-4 h-4" />
                         <span>{lang.name}</span>
@@ -1141,7 +1550,14 @@
     <!-- Backdrop -->
     <button
       class="absolute inset-0 bg-black/60"
-      onclick={() => { if (updateStatus === 'idle' || updateStatus === 'downloaded' || updateStatus === 'error') showUpdateModal = false; }}
+      onclick={() => {
+        if (
+          updateStatus === "idle" ||
+          updateStatus === "downloaded" ||
+          updateStatus === "error"
+        )
+          showUpdateModal = false;
+      }}
     ></button>
 
     <!-- Modal -->
@@ -1150,12 +1566,14 @@
       transition:fly={{ y: 20, duration: 200 }}
     >
       <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b border-white/10">
+      <div
+        class="flex items-center justify-between p-4 border-b border-white/10"
+      >
         <h3 class="text-lg font-bold">{$t("modals.update.title")}</h3>
-        {#if updateStatus === 'idle' || updateStatus === 'downloaded' || updateStatus === 'error'}
+        {#if updateStatus === "idle" || updateStatus === "downloaded" || updateStatus === "error"}
           <button
             class="p-1 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-            onclick={() => showUpdateModal = false}
+            onclick={() => (showUpdateModal = false)}
           >
             <Icon icon="mdi:close" class="w-5 h-5" />
           </button>
@@ -1165,45 +1583,67 @@
       <!-- Content -->
       <div class="p-4 space-y-4">
         <div class="flex items-center gap-4">
-          <div class="w-16 h-16 rounded-xl bg-[#1db954]/10 flex items-center justify-center">
-            {#if updateStatus === 'downloading'}
-              <Icon icon="mdi:loading" class="w-10 h-10 text-[#1db954] animate-spin" />
-            {:else if updateStatus === 'downloaded'}
+          <div
+            class="w-16 h-16 rounded-xl bg-[#1db954]/10 flex items-center justify-center"
+          >
+            {#if updateStatus === "downloading"}
+              <Icon
+                icon="mdi:loading"
+                class="w-10 h-10 text-[#1db954] animate-spin"
+              />
+            {:else if updateStatus === "downloaded"}
               <Icon icon="mdi:check-circle" class="w-10 h-10 text-[#1db954]" />
-            {:else if updateStatus === 'installing'}
-              <Icon icon="mdi:cog" class="w-10 h-10 text-[#1db954] animate-spin" />
-            {:else if updateStatus === 'error'}
+            {:else if updateStatus === "installing"}
+              <Icon
+                icon="mdi:cog"
+                class="w-10 h-10 text-[#1db954] animate-spin"
+              />
+            {:else if updateStatus === "error"}
               <Icon icon="mdi:alert-circle" class="w-10 h-10 text-red-400" />
             {:else}
-              <Icon icon="mdi:download-circle" class="w-10 h-10 text-[#1db954]" />
+              <Icon
+                icon="mdi:download-circle"
+                class="w-10 h-10 text-[#1db954]"
+              />
             {/if}
           </div>
           <div>
-            <p class="text-2xl font-bold text-[#1db954]">v{updateAvailable.version}</p>
-            <p class="text-sm text-white/50">{$t("modals.update.current")} v{APP_VERSION}{APP_FLAVOR ? `(${APP_FLAVOR})` : ''}</p>
+            <p class="text-2xl font-bold text-[#1db954]">
+              v{updateAvailable.version}
+            </p>
+            <p class="text-sm text-white/50">
+              {$t("modals.update.current")} v{APP_VERSION}{APP_FLAVOR
+                ? `(${APP_FLAVOR})`
+                : ""}
+            </p>
           </div>
         </div>
 
-        {#if updateStatus === 'error'}
+        {#if updateStatus === "error"}
           <div class="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p class="text-sm text-red-400">{updateError}</p>
           </div>
-        {:else if updateStatus === 'downloading'}
+        {:else if updateStatus === "downloading"}
           <p class="text-sm text-white/70">{$t("modals.update.downloading")}</p>
-        {:else if updateStatus === 'downloaded'}
-          <p class="text-sm text-white/70">{$t("modals.update.downloadComplete")}</p>
-        {:else if updateStatus === 'installing'}
+        {:else if updateStatus === "downloaded"}
+          <p class="text-sm text-white/70">
+            {$t("modals.update.downloadComplete")}
+          </p>
+        {:else if updateStatus === "installing"}
           <p class="text-sm text-white/70">{$t("modals.update.installing")}</p>
         {:else}
-          <p class="text-sm text-white/70">{$t("modals.update.newVersionAvailable")}</p>
+          <p class="text-sm text-white/70">
+            {$t("modals.update.newVersionAvailable")}
+          </p>
         {/if}
 
         <!-- Action Buttons -->
         <div class="flex gap-2 pt-2">
-          {#if updateStatus === 'idle'}
+          {#if updateStatus === "idle"}
             <button
               class="flex-1 px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-sm transition-colors"
-              onclick={() => invoke('open_url', { url: updateAvailable.release_url })}
+              onclick={() =>
+                invoke("open_url", { url: updateAvailable.release_url })}
             >
               {$t("modals.update.manual")}
             </button>
@@ -1214,7 +1654,7 @@
               <Icon icon="mdi:download" class="w-4 h-4" />
               {$t("modals.update.autoUpdate")}
             </button>
-          {:else if updateStatus === 'downloading'}
+          {:else if updateStatus === "downloading"}
             <button
               class="flex-1 px-4 py-2.5 rounded-lg bg-white/10 text-white/50 font-medium text-sm cursor-not-allowed flex items-center justify-center gap-2"
               disabled
@@ -1222,10 +1662,10 @@
               <Icon icon="mdi:loading" class="w-4 h-4 animate-spin" />
               {$t("common.loading")}
             </button>
-          {:else if updateStatus === 'downloaded'}
+          {:else if updateStatus === "downloaded"}
             <button
               class="flex-1 px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-sm transition-colors"
-              onclick={() => showUpdateModal = false}
+              onclick={() => (showUpdateModal = false)}
             >
               {$t("modals.update.later")}
             </button>
@@ -1236,7 +1676,7 @@
               <Icon icon="mdi:restart" class="w-4 h-4" />
               {$t("modals.update.installRestart")}
             </button>
-          {:else if updateStatus === 'installing'}
+          {:else if updateStatus === "installing"}
             <button
               class="flex-1 px-4 py-2.5 rounded-lg bg-white/10 text-white/50 font-medium text-sm cursor-not-allowed flex items-center justify-center gap-2"
               disabled
@@ -1244,16 +1684,20 @@
               <Icon icon="mdi:loading" class="w-4 h-4 animate-spin" />
               {$t("common.loading")}
             </button>
-          {:else if updateStatus === 'error'}
+          {:else if updateStatus === "error"}
             <button
               class="flex-1 px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-sm transition-colors"
-              onclick={() => { updateStatus = 'idle'; updateError = ''; }}
+              onclick={() => {
+                updateStatus = "idle";
+                updateError = "";
+              }}
             >
               {$t("modals.update.tryAgain")}
             </button>
             <button
               class="flex-1 px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-sm transition-colors"
-              onclick={() => invoke('open_url', { url: updateAvailable.release_url })}
+              onclick={() =>
+                invoke("open_url", { url: updateAvailable.release_url })}
             >
               {$t("modals.update.manualDownload")}
             </button>
@@ -1279,7 +1723,9 @@
       transition:fly={{ y: 20, duration: 200 }}
     >
       <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b border-white/10">
+      <div
+        class="flex items-center justify-between p-4 border-b border-white/10"
+      >
         <h3 class="text-lg font-bold flex items-center gap-2">
           <Icon icon="mdi:alert-circle" class="w-5 h-5 text-yellow-400" />
           {$t("modals.largeLibrary.title")}
@@ -1289,12 +1735,18 @@
       <!-- Content -->
       <div class="p-4 space-y-4">
         <div class="flex items-center gap-4">
-          <div class="w-16 h-16 rounded-xl bg-yellow-500/10 flex items-center justify-center">
+          <div
+            class="w-16 h-16 rounded-xl bg-yellow-500/10 flex items-center justify-center"
+          >
             <Icon icon="mdi:folder-music" class="w-10 h-10 text-yellow-400" />
           </div>
           <div>
-            <p class="text-2xl font-bold text-yellow-400">{largeLibraryCount.toLocaleString()}</p>
-            <p class="text-sm text-white/50">{$t("modals.largeLibrary.filesFound")}</p>
+            <p class="text-2xl font-bold text-yellow-400">
+              {largeLibraryCount.toLocaleString()}
+            </p>
+            <p class="text-sm text-white/50">
+              {$t("modals.largeLibrary.filesFound")}
+            </p>
           </div>
         </div>
 
@@ -1303,7 +1755,9 @@
         </p>
 
         <div class="p-3 rounded-lg bg-white/5">
-          <p class="text-xs text-white/50 mb-2">{$t("modals.largeLibrary.recommendation")}</p>
+          <p class="text-xs text-white/50 mb-2">
+            {$t("modals.largeLibrary.recommendation")}
+          </p>
           <p class="text-sm text-white/70">
             {$t("modals.largeLibrary.recommendationText")}
           </p>
@@ -1347,7 +1801,10 @@
     class="fixed inset-0 z-50 flex items-center justify-center"
     transition:fade={{ duration: 150 }}
   >
-    <button class="absolute inset-0 bg-black/60" onclick={() => showCloseConfirmModal = false}></button>
+    <button
+      class="absolute inset-0 bg-black/60"
+      onclick={() => (showCloseConfirmModal = false)}
+    ></button>
 
     <div
       class="relative bg-[#282828] rounded-xl shadow-2xl w-[350px] max-w-[90vw] overflow-hidden"
@@ -1355,7 +1812,9 @@
     >
       <div class="p-5 space-y-4">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+          <div
+            class="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center"
+          >
             <Icon icon="mdi:power" class="w-5 h-5 text-red-400" />
           </div>
           <div>
@@ -1367,7 +1826,7 @@
         <div class="flex gap-2">
           <button
             class="flex-1 px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-sm transition-colors"
-            onclick={() => showCloseConfirmModal = false}
+            onclick={() => (showCloseConfirmModal = false)}
           >
             {$t("modals.closeApp.cancel")}
           </button>
@@ -1384,6 +1843,112 @@
   </div>
 {/if}
 
+<!-- About Modal -->
+{#if showAboutModal}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    transition:fade={{ duration: 150 }}
+  >
+    <button
+      class="absolute inset-0 bg-black/60 cursor-default"
+      onclick={() => (showAboutModal = false)}
+      title="Close"
+    ></button>
+
+    <div
+      class="relative bg-[#282828] rounded-xl shadow-2xl w-full max-w-sm overflow-hidden"
+      transition:scale={{ duration: 150, start: 0.95 }}
+    >
+      <div class="p-5 space-y-4">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-10 h-10 rounded-full bg-[#1db954]/20 flex items-center justify-center"
+          >
+            <Icon
+              icon="mdi:information-outline"
+              class="w-5 h-5 text-[#1db954]"
+            />
+          </div>
+          <div>
+            <h3 class="text-lg font-bold">Vùng Đất Chill</h3>
+            <p class="text-sm text-white/50">
+              v{APP_VERSION}{APP_FLAVOR ? `(${APP_FLAVOR})` : ""}
+            </p>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div
+            class="bg-black/20 rounded-xl p-4 border border-white/5 space-y-3"
+          >
+            <p class="text-white/70 leading-relaxed text-center">
+              Dựa trên mã nguồn mở <strong class="text-white"
+                >Where Winds Meet Midi Player</strong
+              >
+              được phát triển bởi tác giả
+              <strong class="text-white">YueLyn</strong>.
+            </p>
+            <div class="flex justify-center">
+              <button
+                onclick={() =>
+                  invoke("open_url", {
+                    url: "https://github.com/YueLyn/Where-Winds-Meet-Midi-Player",
+                  })}
+                class="text-xs text-white/40 hover:text-[#1db954] hover:underline flex items-center gap-1.5 transition-colors"
+                title="View original source code"
+              >
+                <Icon icon="mdi:github" class="w-4 h-4" />
+                GitHub Repository
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <p
+              class="text-xs text-white/40 font-medium uppercase tracking-wider text-center"
+            >
+              Tham gia cộng đồng
+            </p>
+            <button
+              onclick={() =>
+                invoke("open_url", { url: "https://discord.gg/c9a4paH47J" })}
+              class="w-full flex items-center gap-4 p-4 rounded-2xl bg-[#5865F2] hover:bg-[#4752C4] text-white shadow-lg shadow-[#5865F2]/20 transition-all transform hover:scale-[1.01] active:scale-[0.98] group"
+            >
+              <div
+                class="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0"
+              >
+                <Icon
+                  icon="ic:baseline-discord"
+                  class="w-8 h-8 group-hover:scale-110 transition-transform"
+                />
+              </div>
+              <div class="text-left">
+                <p class="font-bold text-base leading-tight">
+                  Discord Vùng Đất Chill
+                </p>
+                <p class="text-[11px] text-white/70 mt-0.5">
+                  Tham gia để cập nhật tin tức & hỗ trợ
+                </p>
+              </div>
+              <Icon
+                icon="mdi:chevron-right"
+                class="w-5 h-5 ml-auto opacity-30 group-hover:opacity-100 transition-opacity"
+              />
+            </button>
+          </div>
+        </div>
+
+        <button
+          class="w-full px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 font-medium text-sm transition-all"
+          onclick={() => (showAboutModal = false)}
+        >
+          Đóng
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <!-- Importing Files Overlay -->
 {#if $isImportingFiles}
   <div
@@ -1391,7 +1956,10 @@
     transition:fade={{ duration: 150 }}
   >
     <div class="text-center">
-      <Icon icon="mdi:loading" class="w-12 h-12 text-[#1db954] mx-auto mb-4 animate-spin" />
+      <Icon
+        icon="mdi:loading"
+        class="w-12 h-12 text-[#1db954] mx-auto mb-4 animate-spin"
+      />
       <p class="text-lg font-semibold">{$t("modals.importing.title")}</p>
     </div>
   </div>
@@ -1403,10 +1971,16 @@
     class="fixed bottom-[118px] left-1/2 -translate-x-1/2 z-[60] w-full max-w-md px-4"
     transition:fly={{ y: 20, duration: 200 }}
   >
-    <div class="p-2.5 rounded-lg bg-[#1db954]/15 border border-[#1db954]/30 backdrop-blur-md flex items-center gap-3">
+    <div
+      class="p-2.5 rounded-lg bg-[#1db954]/15 border border-[#1db954]/30 backdrop-blur-md flex items-center gap-3"
+    >
       <Icon icon="mdi:upload" class="w-4 h-4 text-[#1db954] flex-shrink-0" />
       <p class="text-xs text-white/90 flex-1 truncate">
-        <span class="text-[#1db954] font-medium">{$shareNotification.peerName}</span> {$t("share.downloaded")} <span class="text-white/70">{$shareNotification.songName}</span>
+        <span class="text-[#1db954] font-medium"
+          >{$shareNotification.peerName}</span
+        >
+        {$t("share.downloaded")}
+        <span class="text-white/70">{$shareNotification.songName}</span>
       </p>
       <button
         class="text-white/40 hover:text-white transition-colors flex-shrink-0"

@@ -1,6 +1,6 @@
 {
-  "name": "wwm-overlay",
-  "version": "1.0.8",
+  "name": "chill-music",
+  "version": "1.2.1",
   "module": "index.ts",
   "type": "module",
   "private": true,
