@@ -170,13 +170,10 @@
     }, 2200);
   }
 
-  $: if (
-    $scrollToTrackTrigger &&
-    $scrollToTrackTrigger.timestamp !== lastHandledTriggerTimestamp &&
-    scrollContainer
-  ) {
-    lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
-    scrollToSong($scrollToTrackTrigger.path);
+  $: if ($scrollToTrackTrigger && scrollContainer) {
+    const target = $scrollToTrackTrigger.path;
+    scrollToTrackTrigger.set(null); // Consume trigger immediately
+    scrollToSong(target);
   }
 
   onMount(async () => {
@@ -184,12 +181,10 @@
     if (scrollContainer) {
       scrollContainer.scrollTop = $queueScrollTop || 0;
     }
-    if (
-      $scrollToTrackTrigger &&
-      Date.now() - $scrollToTrackTrigger.timestamp < 3000
-    ) {
-      lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
-      setTimeout(() => scrollToSong($scrollToTrackTrigger.path), 120);
+    if ($scrollToTrackTrigger) {
+      const target = $scrollToTrackTrigger.path;
+      scrollToTrackTrigger.set(null);
+      setTimeout(() => scrollToSong(target), 120);
     }
   });
 

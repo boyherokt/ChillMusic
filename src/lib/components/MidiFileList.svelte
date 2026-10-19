@@ -137,7 +137,6 @@
   // Smooth scroll and pulse highlight for current track
   let highlightedSongPath = null;
   let highlightTimeout = null;
-  let lastHandledTriggerTimestamp = 0;
 
   async function scrollToSong(targetPath) {
     if (!targetPath || !scrollContainer) return;
@@ -180,20 +179,18 @@
     }, 2200);
   }
 
-  $: if (
-    $scrollToTrackTrigger &&
-    $scrollToTrackTrigger.timestamp !== lastHandledTriggerTimestamp &&
-    scrollContainer
-  ) {
-    lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
-    scrollToSong($scrollToTrackTrigger.path);
+  // React to explicit user-requested scroll to track
+  $: if ($scrollToTrackTrigger && scrollContainer) {
+    const target = $scrollToTrackTrigger.path;
+    scrollToTrackTrigger.set(null); // Consume trigger immediately
+    scrollToSong(target);
   }
 
   onMount(async () => {
     // Wait for DOM to render list items
     await tick();
 
-    // Restore initial scroll state
+    // Restore initial scroll state (preserves scroll position when switching tabs)
     if (scrollContainer) {
       scrollContainer.scrollTop = $libraryScrollTop || 0;
       scrollTop = $libraryScrollTop || 0;
@@ -212,13 +209,11 @@
       visibleEndIndex = Math.max(100, startIndex + visibleCount); // At least 100 items initially
     }
 
-    // Check if we mounted as a result of a recent scroll request
-    if (
-      $scrollToTrackTrigger &&
-      Date.now() - $scrollToTrackTrigger.timestamp < 3000
-    ) {
-      lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
-      setTimeout(() => scrollToSong($scrollToTrackTrigger.path), 120);
+    // Only scroll to song if an unconsumed click trigger exists
+    if ($scrollToTrackTrigger) {
+      const target = $scrollToTrackTrigger.path;
+      scrollToTrackTrigger.set(null); // Consume trigger immediately
+      setTimeout(() => scrollToSong(target), 120);
     }
 
     // Listen for Tauri drag-drop events

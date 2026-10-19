@@ -71,6 +71,8 @@ const LOAD_BATCH_SIZE = 2000;
 export const currentIndex = writable(0);
 export const libraryScrollTop = writable(0);
 export const queueScrollTop = writable(0);
+export const favoritesScrollTop = writable(0);
+export const playlistsScrollTop = writable(0);
 export const librarySortBy = writable("date-desc");
 
 // Multiple playlists support

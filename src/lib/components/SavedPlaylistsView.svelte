@@ -29,6 +29,7 @@
     isPlaying,
     isPaused,
     scrollToTrackTrigger,
+    playlistsScrollTop,
   } from "../stores/player.js";
   import SongContextMenu from "./SongContextMenu.svelte";
   import SearchSort from "./SearchSort.svelte";
@@ -121,17 +122,15 @@
     }, 2200);
   }
 
-  $: if (
-    $scrollToTrackTrigger &&
-    $scrollToTrackTrigger.timestamp !== lastHandledTriggerTimestamp &&
-    scrollContainer
-  ) {
-    lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
-    scrollToSong($scrollToTrackTrigger.path);
+  $: if ($scrollToTrackTrigger && scrollContainer) {
+    const target = $scrollToTrackTrigger.path;
+    scrollToTrackTrigger.set(null); // Consume trigger immediately
+    scrollToSong(target);
   }
 
   function handleScroll(e) {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
+    playlistsScrollTop.set(scrollTop);
     showTopMask = scrollTop > 10;
     showBottomMask = scrollTop + clientHeight < scrollHeight - 10;
   }
@@ -148,12 +147,13 @@
 
   onMount(() => {
     checkScrollMask();
-    if (
-      $scrollToTrackTrigger &&
-      Date.now() - $scrollToTrackTrigger.timestamp < 3000
-    ) {
-      lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
-      setTimeout(() => scrollToSong($scrollToTrackTrigger.path), 120);
+    if (scrollContainer) {
+      scrollContainer.scrollTop = $playlistsScrollTop || 0;
+    }
+    if ($scrollToTrackTrigger) {
+      const target = $scrollToTrackTrigger.path;
+      scrollToTrackTrigger.set(null);
+      setTimeout(() => scrollToSong(target), 120);
     }
   });
 

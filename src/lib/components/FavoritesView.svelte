@@ -23,6 +23,7 @@
     missingFiles,
     removeDeletedFile,
     scrollToTrackTrigger,
+    favoritesScrollTop,
   } from "../stores/player.js";
   import SongContextMenu from "./SongContextMenu.svelte";
   import SearchSort from "./SearchSort.svelte";
@@ -135,25 +136,11 @@
     }, 2200);
   }
 
-  $: if (
-    $scrollToTrackTrigger &&
-    $scrollToTrackTrigger.timestamp !== lastHandledTriggerTimestamp &&
-    scrollContainer
-  ) {
-    lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
-    scrollToSong($scrollToTrackTrigger.path);
+  $: if ($scrollToTrackTrigger && scrollContainer) {
+    const target = $scrollToTrackTrigger.path;
+    scrollToTrackTrigger.set(null); // Consume trigger immediately
+    scrollToSong(target);
   }
-
-  onMount(async () => {
-    await tick();
-    if (
-      $scrollToTrackTrigger &&
-      Date.now() - $scrollToTrackTrigger.timestamp < 3000
-    ) {
-      lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
-      setTimeout(() => scrollToSong($scrollToTrackTrigger.path), 120);
-    }
-  });
 
   // Drag and drop state
   let items = [];
@@ -210,17 +197,23 @@
 
   function handleScroll(e) {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
+    favoritesScrollTop.set(scrollTop);
     showTopMask = scrollTop > 10;
     showBottomMask = scrollTop + clientHeight < scrollHeight - 10;
   }
 
-  onMount(() => {
-    setTimeout(() => {
-      if (scrollContainer) {
-        const { scrollHeight, clientHeight } = scrollContainer;
-        showBottomMask = scrollHeight > clientHeight;
-      }
-    }, 100);
+  onMount(async () => {
+    await tick();
+    if (scrollContainer) {
+      scrollContainer.scrollTop = $favoritesScrollTop || 0;
+      const { scrollHeight, clientHeight } = scrollContainer;
+      showBottomMask = scrollHeight > clientHeight;
+    }
+    if ($scrollToTrackTrigger) {
+      const target = $scrollToTrackTrigger.path;
+      scrollToTrackTrigger.set(null);
+      setTimeout(() => scrollToSong(target), 120);
+    }
   });
 
   async function playNow(file) {
