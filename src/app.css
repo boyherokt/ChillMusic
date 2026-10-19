@@ -137,6 +137,26 @@
     @apply animate-pulse-glow;
   }
 
+  @keyframes trackTargetPulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(29, 185, 84, 0.7);
+      background-color: rgba(29, 185, 84, 0.32);
+    }
+    40% {
+      box-shadow: 0 0 0 8px rgba(29, 185, 84, 0.15);
+      background-color: rgba(29, 185, 84, 0.22);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(29, 185, 84, 0);
+      background-color: rgba(255, 255, 255, 0.10);
+    }
+  }
+
+  .track-highlight-pulse {
+    animation: trackTargetPulse 2s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+    outline: 1px solid rgba(29, 185, 84, 0.7) !important;
+  }
+
   .animate-fade-in {
     @apply animate-fade-in;
   }

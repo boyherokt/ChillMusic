@@ -312,6 +312,8 @@
     exitLibraryPlayMode,
     playbackContext,
     shuffleMode,
+    scrollToTrackTrigger,
+    activePlaylistId,
   } from "./lib/stores/player.js";
 
   // Note mode options for quick selector (reactive for i18n)
@@ -555,6 +557,36 @@
     if (currentFileData) {
       toggleFavorite(currentFileData);
     }
+  }
+
+  function handleJumpToCurrentTrack() {
+    if (!$currentFile) return;
+
+    const source = $playbackContext?.source;
+    if (source === "favorites") {
+      activeView = "favorites";
+      sidebarTab = "music";
+    } else if (source === "playlist") {
+      if ($playbackContext?.id) {
+        activePlaylistId.set($playbackContext.id);
+      }
+      activeView = "playlists";
+      sidebarTab = "music";
+    } else if (source === "queue") {
+      activeView = "queue";
+      sidebarTab = "music";
+    } else {
+      activeView = "library";
+      sidebarTab = "music";
+    }
+
+    // Trigger scroll event after view transition starts
+    setTimeout(() => {
+      scrollToTrackTrigger.set({
+        path: $currentFile,
+        timestamp: Date.now(),
+      });
+    }, 60);
   }
 
   function handleBandSelectSong() {
@@ -1052,79 +1084,134 @@
         <div
           class="spotify-player px-4 py-3 flex items-center justify-between gap-4 no-drag"
         >
-          <!-- Now Playing -->
-          <div class="flex items-center gap-4 w-64">
-            <div
-              class="relative w-12 h-12 rounded bg-white/5 flex items-center justify-center flex-shrink-0"
-              title={gameFound
-                ? $t("common.gameFound")
-                : $t("common.gameNotFound")}
+          <!-- Now Playing (Bottom-Left) -->
+          <div class="flex items-center gap-2.5 w-72 md:w-80 flex-shrink-0">
+            <!-- Clickable Track Info (Cover + Title + Source) -->
+            <button
+              type="button"
+              class="flex items-center gap-3.5 min-w-0 flex-1 text-left rounded-xl p-1.5 -m-1.5 transition-all duration-200 group/track hover:bg-white/[0.06] active:scale-[0.98] cursor-pointer disabled:cursor-default disabled:hover:bg-transparent no-drag"
+              onclick={handleJumpToCurrentTrack}
+              disabled={!$currentFile}
+              title={$currentFile ? "Bấm để cuộn đến bài đang phát trong danh sách" : $t("player.noTrackSelected")}
             >
-              {#if $currentFile}
-                <Icon icon="mdi:music-note" class="w-6 h-6 text-[#1db954]" />
-              {:else}
-                <Icon icon="mdi:music-note-off" class="w-6 h-6 text-white/30" />
-              {/if}
-              <!-- Game Status Dot -->
+              <!-- Cover Art / Playing Visualizer -->
               <div
-                class="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] {gameFound
-                  ? 'bg-[#1db954]'
-                  : 'bg-red-500'} {gameFound && $isPlaying
-                  ? 'animate-pulse'
-                  : ''}"
-              ></div>
-              <!-- Context Mode Indicator Dot -->
-              {#if $playbackContext && $playbackContext.tracks && $playbackContext.tracks.length > 0}
-                <div
-                  class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] bg-purple-500"
-                  title={$playbackContext.name || "Context"}
-                ></div>
-              {:else if $libraryPlayMode}
-                <div
-                  class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] bg-purple-500"
-                  title={$t("player.libraryPlayMode")}
-                ></div>
-              {/if}
-            </div>
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold truncate text-white/90">
-                {filename($currentFile, $t("player.noTrackSelected"))}
-              </p>
-              <p class="text-xs text-white/50 truncate">
-                {#if $playbackContext && $playbackContext.tracks && $playbackContext.tracks.length > 0}
-                  <span class="text-purple-400 flex items-center gap-1">
+                class="relative w-12 h-12 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center flex-shrink-0 overflow-hidden shadow-inner group-hover/track:border-white/20 transition-all"
+                title={gameFound
+                  ? $t("common.gameFound")
+                  : $t("common.gameNotFound")}
+              >
+                {#if $currentFile}
+                  {#if $isPlaying && !$isPaused}
+                    <!-- Dynamic Playing Equalizer Bars -->
+                    <div class="flex items-end justify-center gap-[3px] h-5 w-6">
+                      <span
+                        class="w-1 bg-[#1db954] rounded-full animate-music-bar-1"
+                        style="height: 60%;"
+                      ></span>
+                      <span
+                        class="w-1 bg-[#1ed760] rounded-full animate-music-bar-2"
+                        style="height: 100%;"
+                      ></span>
+                      <span
+                        class="w-1 bg-[#1db954] rounded-full animate-music-bar-3"
+                        style="height: 75%;"
+                      ></span>
+                    </div>
+                  {:else}
                     <Icon
-                      icon={$shuffleMode
-                        ? "mdi:shuffle"
-                        : "mdi:playlist-music"}
-                      class="w-3 h-3 inline"
+                      icon="mdi:music-note"
+                      class="w-6 h-6 text-[#1db954] transition-transform group-hover/track:scale-110"
                     />
-                    {$playbackContext.name || ($playbackContext.source === 'library' ? $t("nav.library") : $playbackContext.source)} • {(
-                      $playbackContext.index + 1
-                    ).toLocaleString()} / {$playbackContext.tracks.length.toLocaleString()}
-                  </span>
-                {:else if $libraryPlayMode}
-                  <span class="text-purple-400 flex items-center gap-1">
+                  {/if}
+                  <!-- Hover overlay indicating jump-to-track -->
+                  <div
+                    class="absolute inset-0 bg-black/60 opacity-0 group-hover/track:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px]"
+                  >
                     <Icon
-                      icon={$libraryPlayShuffle
-                        ? "mdi:shuffle"
-                        : "mdi:library-music"}
-                      class="w-3 h-3 inline"
+                      icon="mdi:crosshairs-gps"
+                      class="w-5 h-5 text-white drop-shadow"
                     />
-                    {$libraryPlayShuffle
-                      ? $t("player.shuffle")
-                      : $t("nav.library")} • {(
-                      $libraryPlayIndex + 1
-                    ).toLocaleString()} / {$midiFiles.length.toLocaleString()}
-                  </span>
-                {:else if $playlist.length > 0}
-                  {$playlist.length} {$t("library.tracks")}
+                  </div>
                 {:else}
-                  {$t("player.noTrackSelected")}
+                  <Icon icon="mdi:music-note-off" class="w-6 h-6 text-white/30" />
                 {/if}
-              </p>
-            </div>
-            <div class="flex items-center gap-1 flex-shrink-0">
+
+                <!-- Game Status Dot -->
+                <div
+                  class="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] {gameFound
+                    ? 'bg-[#1db954]'
+                    : 'bg-red-500'} {gameFound && $isPlaying
+                    ? 'animate-pulse'
+                    : ''}"
+                  title={gameFound
+                    ? $t("common.gameFound")
+                    : $t("common.gameNotFound")}
+                ></div>
+
+                <!-- Context Mode Indicator Dot -->
+                {#if $playbackContext && $playbackContext.tracks && $playbackContext.tracks.length > 0}
+                  <div
+                    class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] bg-purple-500"
+                    title={$playbackContext.name || "Context"}
+                  ></div>
+                {:else if $libraryPlayMode}
+                  <div
+                    class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#121212] bg-purple-500"
+                    title={$t("player.libraryPlayMode")}
+                  ></div>
+                {/if}
+              </div>
+
+              <!-- Title & Context text -->
+              <div class="min-w-0 flex-1">
+                <p
+                  class="text-sm font-semibold truncate text-white/90 group-hover/track:text-[#1db954] group-hover/track:underline decoration-[#1db954]/50 transition-colors"
+                >
+                  {filename($currentFile, $t("player.noTrackSelected"))}
+                </p>
+                <p class="text-xs text-white/50 truncate flex items-center gap-1 mt-0.5">
+                  {#if $playbackContext && $playbackContext.tracks && $playbackContext.tracks.length > 0}
+                    <span class="text-purple-400 flex items-center gap-1 truncate">
+                      <Icon
+                        icon={$shuffleMode
+                          ? "mdi:shuffle"
+                          : "mdi:playlist-music"}
+                        class="w-3 h-3 flex-shrink-0"
+                      />
+                      <span class="truncate">
+                        {$playbackContext.name || ($playbackContext.source === 'library' ? $t("nav.library") : $playbackContext.source)} • {(
+                          $playbackContext.index + 1
+                        ).toLocaleString()} / {$playbackContext.tracks.length.toLocaleString()}
+                      </span>
+                    </span>
+                  {:else if $libraryPlayMode}
+                    <span class="text-purple-400 flex items-center gap-1 truncate">
+                      <Icon
+                        icon={$libraryPlayShuffle
+                          ? "mdi:shuffle"
+                          : "mdi:library-music"}
+                        class="w-3 h-3 flex-shrink-0"
+                      />
+                      <span class="truncate">
+                        {$libraryPlayShuffle
+                          ? $t("player.shuffle")
+                          : $t("nav.library")} • {(
+                          $libraryPlayIndex + 1
+                        ).toLocaleString()} / {$midiFiles.length.toLocaleString()}
+                      </span>
+                    </span>
+                  {:else if $playlist.length > 0}
+                    <span>{$playlist.length} {$t("library.tracks")}</span>
+                  {:else}
+                    <span>{$t("player.noTrackSelected")}</span>
+                  {/if}
+                </p>
+              </div>
+            </button>
+
+            <!-- Quick Action Buttons (Favorite / Exit Library) -->
+            <div class="flex items-center gap-0.5 flex-shrink-0">
               {#if $libraryPlayMode}
                 <button
                   class="p-1.5 rounded-full text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-all"
@@ -1137,8 +1224,8 @@
               {#if $currentFile}
                 <button
                   class="p-1.5 rounded-full transition-all {currentFileIsFavorite
-                    ? 'text-[#1db954]'
-                    : 'text-white/30 hover:text-white'}"
+                    ? 'text-[#1db954] hover:scale-110'
+                    : 'text-white/30 hover:text-white hover:scale-105'}"
                   onclick={toggleCurrentFavorite}
                   title={currentFileIsFavorite
                     ? "Remove from favorites"

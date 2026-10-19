@@ -2,7 +2,7 @@
   import Icon from "@iconify/svelte";
   import { fade, fly } from "svelte/transition";
   import { flip } from "svelte/animate";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { dndzone } from "svelte-dnd-action";
   import { invoke } from "../tauri/core-proxy.js";
   import { save, open } from "@tauri-apps/plugin-dialog";
@@ -28,6 +28,7 @@
     currentFile,
     isPlaying,
     isPaused,
+    scrollToTrackTrigger,
   } from "../stores/player.js";
   import SongContextMenu from "./SongContextMenu.svelte";
   import SearchSort from "./SearchSort.svelte";
@@ -85,6 +86,50 @@
   let showTopMask = false;
   let showBottomMask = false;
 
+  // Smooth scroll and pulse highlight for current track
+  let highlightedSongPath = null;
+  let highlightTimeout = null;
+  let lastHandledTriggerTimestamp = 0;
+
+  async function scrollToSong(targetPath) {
+    if (!targetPath || !scrollContainer) return;
+    if (searchQuery.trim() !== "") {
+      searchQuery = "";
+      await tick();
+    }
+    const idx = trackItems.findIndex((f) => f.path === targetPath);
+    if (idx === -1) return;
+
+    await tick();
+    const el = scrollContainer.querySelector(
+      `[data-song-path="${CSS.escape(targetPath)}"]`,
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      const clientHeight = scrollContainer.clientHeight || 500;
+      scrollContainer.scrollTo({
+        top: Math.max(0, idx * 54 - clientHeight / 2),
+        behavior: "smooth",
+      });
+    }
+
+    highlightedSongPath = targetPath;
+    if (highlightTimeout) clearTimeout(highlightTimeout);
+    highlightTimeout = setTimeout(() => {
+      highlightedSongPath = null;
+    }, 2200);
+  }
+
+  $: if (
+    $scrollToTrackTrigger &&
+    $scrollToTrackTrigger.timestamp !== lastHandledTriggerTimestamp &&
+    scrollContainer
+  ) {
+    lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
+    scrollToSong($scrollToTrackTrigger.path);
+  }
+
   function handleScroll(e) {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
     showTopMask = scrollTop > 10;
@@ -103,6 +148,13 @@
 
   onMount(() => {
     checkScrollMask();
+    if (
+      $scrollToTrackTrigger &&
+      Date.now() - $scrollToTrackTrigger.timestamp < 3000
+    ) {
+      lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
+      setTimeout(() => scrollToSong($scrollToTrackTrigger.path), 120);
+    }
   });
 
   // Re-check scroll mask when switching views
@@ -488,12 +540,14 @@
         {@const isCurrentTrack = $currentFile === track.path}
         {@const isPlayingTrack = isCurrentTrack && $isPlaying && !$isPaused}
         <div
-          class="group spotify-list-item flex items-center gap-3 py-2 mb-1 transition-all duration-200 {sortBy ===
-          'manual'
-            ? 'cursor-grab active:cursor-grabbing'
-            : ''} {isCurrentTrack
+          class="group spotify-list-item flex items-center gap-3 py-2 mb-1 transition-all duration-200 {highlightedSongPath === track.path
+            ? 'track-highlight-pulse'
+            : sortBy === 'manual'
+              ? 'cursor-grab active:cursor-grabbing'
+              : ''} {isCurrentTrack
             ? 'bg-white/10 ring-1 ring-white/5'
             : 'hover:bg-white/5'} {isMissing ? 'opacity-50' : ''}"
+          data-song-path={track.path}
           animate:flip={{ duration: isTrackDragging ? flipDurationMs : 0 }}
           oncontextmenu={(e) => !isMissing && handleContextMenu(e, track)}
         >

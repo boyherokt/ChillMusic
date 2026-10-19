@@ -56,6 +56,9 @@ export const playbackContext = writable({
 export const shuffleIndices = writable([]);
 export const shufflePosition = writable(0);
 
+// Trigger to smoothly scroll to and highlight a track in whichever list is active
+export const scrollToTrackTrigger = writable(null); // { path: string, timestamp: number }
+
 // Library play mode - play directly from library without queue
 export const libraryPlayMode = writable(false);
 export const libraryPlayIndex = writable(-1); // Current index in filtered library

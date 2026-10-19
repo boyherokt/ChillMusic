@@ -3,7 +3,7 @@
   import { fade, fly } from "svelte/transition";
   import { flip } from "svelte/animate";
   import { dndzone } from "svelte-dnd-action";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { invoke } from "../tauri/core-proxy.js";
   import { save, open } from "@tauri-apps/plugin-dialog";
   import { t } from "svelte-i18n";
@@ -22,6 +22,7 @@
     reorderFavorites,
     missingFiles,
     removeDeletedFile,
+    scrollToTrackTrigger,
   } from "../stores/player.js";
   import SongContextMenu from "./SongContextMenu.svelte";
   import SearchSort from "./SearchSort.svelte";
@@ -98,6 +99,61 @@
   let scrollContainer;
   let showTopMask = false;
   let showBottomMask = false;
+
+  // Smooth scroll and pulse highlight for current track
+  let highlightedSongPath = null;
+  let highlightTimeout = null;
+  let lastHandledTriggerTimestamp = 0;
+
+  async function scrollToSong(targetPath) {
+    if (!targetPath || !scrollContainer) return;
+    if (searchQuery.trim() !== "") {
+      searchQuery = "";
+      await tick();
+    }
+    const idx = items.findIndex((f) => f.path === targetPath);
+    if (idx === -1) return;
+
+    await tick();
+    const el = scrollContainer.querySelector(
+      `[data-song-path="${CSS.escape(targetPath)}"]`,
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      const clientHeight = scrollContainer.clientHeight || 500;
+      scrollContainer.scrollTo({
+        top: Math.max(0, idx * 54 - clientHeight / 2),
+        behavior: "smooth",
+      });
+    }
+
+    highlightedSongPath = targetPath;
+    if (highlightTimeout) clearTimeout(highlightTimeout);
+    highlightTimeout = setTimeout(() => {
+      highlightedSongPath = null;
+    }, 2200);
+  }
+
+  $: if (
+    $scrollToTrackTrigger &&
+    $scrollToTrackTrigger.timestamp !== lastHandledTriggerTimestamp &&
+    scrollContainer
+  ) {
+    lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
+    scrollToSong($scrollToTrackTrigger.path);
+  }
+
+  onMount(async () => {
+    await tick();
+    if (
+      $scrollToTrackTrigger &&
+      Date.now() - $scrollToTrackTrigger.timestamp < 3000
+    ) {
+      lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
+      setTimeout(() => scrollToSong($scrollToTrackTrigger.path), 120);
+    }
+  });
 
   // Drag and drop state
   let items = [];
@@ -448,12 +504,14 @@
       {#each items as item, index (item.id)}
         {@const isMissing = !item.path || $missingFiles.has(item.hash)}
         <div
-          class="group spotify-list-item flex items-center gap-4 py-2 transition-all duration-200 {sortBy ===
-          'manual'
-            ? 'cursor-grab active:cursor-grabbing'
-            : ''} {$currentFile === item.path
+          class="group spotify-list-item flex items-center gap-4 py-2 transition-all duration-200 {highlightedSongPath === item.path
+            ? 'track-highlight-pulse'
+            : sortBy === 'manual'
+              ? 'cursor-grab active:cursor-grabbing'
+              : ''} {$currentFile === item.path
             ? 'bg-white/10 ring-1 ring-white/5'
             : 'hover:bg-white/5'} {isMissing ? 'opacity-50' : ''}"
+          data-song-path={item.path}
           animate:flip={{ duration: isDragging ? flipDurationMs : 0 }}
           oncontextmenu={(e) => handleContextMenu(e, item)}
         >

@@ -33,6 +33,7 @@
     isImportingFiles,
     libraryScrollTop,
     librarySortBy,
+    scrollToTrackTrigger,
   } from "../stores/player.js";
   import {
     bandSongSelectMode,
@@ -133,6 +134,61 @@
     }
   }
 
+  // Smooth scroll and pulse highlight for current track
+  let highlightedSongPath = null;
+  let highlightTimeout = null;
+  let lastHandledTriggerTimestamp = 0;
+
+  async function scrollToSong(targetPath) {
+    if (!targetPath || !scrollContainer) return;
+
+    // Clear search query if file is currently filtered out
+    let targetIndex = filteredFiles.findIndex((f) => f.path === targetPath);
+    if (targetIndex === -1 && searchQuery.trim() !== "") {
+      searchQuery = "";
+      await tick();
+      targetIndex = filteredFiles.findIndex((f) => f.path === targetPath);
+    }
+
+    if (targetIndex === -1) return;
+
+    const clientHeight = scrollContainer.clientHeight || 500;
+    const targetScrollTop = Math.max(
+      0,
+      targetIndex * ITEM_HEIGHT - clientHeight / 2 + ITEM_HEIGHT / 2,
+    );
+
+    // Expand virtual scroll bounds so target item is mounted in DOM
+    const startIdx = Math.max(
+      0,
+      Math.floor(targetScrollTop / ITEM_HEIGHT) - BUFFER_ITEMS,
+    );
+    const count = Math.ceil(clientHeight / ITEM_HEIGHT) + BUFFER_ITEMS * 4;
+    visibleStartIndex = Math.max(0, startIdx);
+    visibleEndIndex = Math.min(filteredFiles.length, startIdx + count);
+    await tick();
+
+    scrollContainer.scrollTo({
+      top: targetScrollTop,
+      behavior: "smooth",
+    });
+
+    highlightedSongPath = targetPath;
+    if (highlightTimeout) clearTimeout(highlightTimeout);
+    highlightTimeout = setTimeout(() => {
+      highlightedSongPath = null;
+    }, 2200);
+  }
+
+  $: if (
+    $scrollToTrackTrigger &&
+    $scrollToTrackTrigger.timestamp !== lastHandledTriggerTimestamp &&
+    scrollContainer
+  ) {
+    lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
+    scrollToSong($scrollToTrackTrigger.path);
+  }
+
   onMount(async () => {
     // Wait for DOM to render list items
     await tick();
@@ -154,6 +210,15 @@
         Math.ceil(clientHeight / ITEM_HEIGHT) + BUFFER_ITEMS * 2;
       visibleStartIndex = startIndex;
       visibleEndIndex = Math.max(100, startIndex + visibleCount); // At least 100 items initially
+    }
+
+    // Check if we mounted as a result of a recent scroll request
+    if (
+      $scrollToTrackTrigger &&
+      Date.now() - $scrollToTrackTrigger.timestamp < 3000
+    ) {
+      lastHandledTriggerTimestamp = $scrollToTrackTrigger.timestamp;
+      setTimeout(() => scrollToSong($scrollToTrackTrigger.path), 120);
     }
 
     // Listen for Tauri drag-drop events
@@ -969,11 +1034,13 @@
         {@const index = visibleStartIndex + i}
         {@const isSelected = selectedFiles.has(file.hash)}
         <div
-          class="group spotify-list-item flex items-center gap-4 py-2 rounded-lg transition-colors duration-150 {isSelected
-            ? 'bg-[#1db954]/20 ring-1 ring-[#1db954]/30'
-            : $currentFile === file.path
-              ? 'bg-white/10 ring-1 ring-white/5'
-              : 'hover:bg-white/5'} {invalid ? 'opacity-60' : ''}"
+          class="group spotify-list-item flex items-center gap-4 py-2 rounded-lg transition-colors duration-150 {highlightedSongPath === file.path
+            ? 'track-highlight-pulse'
+            : isSelected
+              ? 'bg-[#1db954]/20 ring-1 ring-[#1db954]/30'
+              : $currentFile === file.path
+                ? 'bg-white/10 ring-1 ring-white/5'
+                : 'hover:bg-white/5'} {invalid ? 'opacity-60' : ''}"
           style="height: {ITEM_HEIGHT}px; margin-bottom: 2px;"
           title={invalid ? $t("library.invalidFile") : $t("library.selectHint")}
           oncontextmenu={(e) => handleContextMenu(e, file)}
