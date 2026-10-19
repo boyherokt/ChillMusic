@@ -762,7 +762,7 @@
 
     <!-- Clickable Icon -->
     <button
-      class="w-14 h-14 rounded-2xl bg-black/75 border border-white/15 shadow-2xl overflow-hidden relative flex items-center justify-center cursor-pointer active:scale-95 transition-transform backdrop-blur-2xl"
+      class="w-14 h-14 rounded-2xl bg-black/85 border border-white/15 shadow-2xl overflow-hidden relative flex items-center justify-center cursor-pointer active:scale-95 transition-transform backdrop-blur-2xl"
       onclick={toggleMiniMode}
       title="Click to expand"
     >
