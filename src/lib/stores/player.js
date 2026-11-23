@@ -454,11 +454,20 @@ export function createPlaylist(name) {
     return newLists;
   });
 
+  if (isTauri) {
+    invoke('create_playlist_folder', { name }).catch(err => {
+      console.error('Failed to create playlist folder:', err);
+    });
+  }
+
   return id;
 }
 
 export function deletePlaylist(id) {
+  let targetName = null;
   savedPlaylists.update(lists => {
+    const target = lists.find(p => p.id === id);
+    if (target) targetName = target.name;
     const newLists = lists.filter(p => p.id !== id);
     savePlaylists(newLists);
     return newLists;
@@ -469,22 +478,39 @@ export function deletePlaylist(id) {
   if (currentActive === id) {
     activePlaylistId.set(null);
   }
+
+  if (isTauri && targetName) {
+    invoke('delete_playlist_folder', { name: targetName })
+      .then(() => loadMidiFiles())
+      .catch(err => console.error('Failed to delete playlist folder:', err));
+  }
 }
 
 export function renamePlaylist(id, newName) {
+  let oldName = null;
   savedPlaylists.update(lists => {
+    const target = lists.find(p => p.id === id);
+    if (target) oldName = target.name;
     const newLists = lists.map(p =>
       p.id === id ? { ...p, name: newName } : p
     );
     savePlaylists(newLists);
     return newLists;
   });
+
+  if (isTauri && oldName && oldName !== newName) {
+    invoke('rename_playlist_folder', { oldName, newName })
+      .then(() => loadMidiFiles())
+      .catch(err => console.error('Failed to rename playlist folder:', err));
+  }
 }
 
 export function addToSavedPlaylist(playlistId, file) {
+  let targetPlaylistName = null;
   savedPlaylists.update(lists => {
     const newLists = lists.map(p => {
       if (p.id === playlistId) {
+        targetPlaylistName = p.name;
         // Check for duplicate by hash
         if (!p.tracks.find(t => t.hash === file.hash)) {
           return { ...p, tracks: [...p.tracks, file] };
@@ -495,13 +521,39 @@ export function addToSavedPlaylist(playlistId, file) {
     savePlaylists(newLists);
     return newLists;
   });
+
+  if (isTauri && targetPlaylistName && file?.path) {
+    invoke('add_track_to_playlist_folder', {
+      playlistName: targetPlaylistName,
+      filePath: file.path
+    }).then(newPath => {
+      if (newPath && newPath !== file.path) {
+        savedPlaylists.update(lists => {
+          const updated = lists.map(p => {
+            if (p.id === playlistId) {
+              return {
+                ...p,
+                tracks: p.tracks.map(t => t.hash === file.hash ? { ...t, path: newPath } : t)
+              };
+            }
+            return p;
+          });
+          savePlaylists(updated);
+          return updated;
+        });
+      }
+      loadMidiFiles();
+    }).catch(err => console.error('Failed to add track to playlist folder:', err));
+  }
 }
 
 // Add multiple files to playlist at once (single save - avoids race condition)
 export function addManyToSavedPlaylist(playlistId, files) {
+  let targetPlaylistName = null;
   savedPlaylists.update(lists => {
     const newLists = lists.map(p => {
       if (p.id === playlistId) {
+        targetPlaylistName = p.name;
         // Filter out duplicates by hash
         const existingHashes = new Set(p.tracks.map(t => t.hash));
         const newTracks = files.filter(f => !existingHashes.has(f.hash));
@@ -514,12 +566,39 @@ export function addManyToSavedPlaylist(playlistId, files) {
     savePlaylists(newLists);
     return newLists;
   });
+
+  if (isTauri && targetPlaylistName && Array.isArray(files) && files.length > 0) {
+    (async () => {
+      let anyCopied = false;
+      for (const file of files) {
+        if (file?.path) {
+          try {
+            await invoke('add_track_to_playlist_folder', {
+              playlistName: targetPlaylistName,
+              filePath: file.path
+            });
+            anyCopied = true;
+          } catch (e) {
+            console.error('Failed to copy track to playlist folder:', e);
+          }
+        }
+      }
+      if (anyCopied) {
+        loadMidiFiles();
+      }
+    })();
+  }
 }
 
 export function removeFromSavedPlaylist(playlistId, fileHash) {
+  let targetPlaylistName = null;
+  let trackPath = null;
   savedPlaylists.update(lists => {
     const newLists = lists.map(p => {
       if (p.id === playlistId) {
+        targetPlaylistName = p.name;
+        const track = p.tracks.find(t => t.hash === fileHash);
+        if (track) trackPath = track.path;
         return { ...p, tracks: p.tracks.filter(t => t.hash !== fileHash) };
       }
       return p;
@@ -527,6 +606,60 @@ export function removeFromSavedPlaylist(playlistId, fileHash) {
     savePlaylists(newLists);
     return newLists;
   });
+
+  if (isTauri && targetPlaylistName && trackPath) {
+    invoke('remove_track_from_playlist_folder', {
+      playlistName: targetPlaylistName,
+      filePath: trackPath
+    }).then(() => {
+      loadMidiFiles();
+    }).catch(err => console.error('Failed to remove track from playlist folder:', err));
+  }
+}
+
+// Open a playlist folder in explorer
+export async function openPlaylistFolder(name) {
+  if (isTauri) {
+    try {
+      await invoke('open_playlist_folder', { name: name || null });
+    } catch (err) {
+      console.error('Failed to open playlist folder:', err);
+    }
+  }
+}
+
+// Refresh playlists from folder
+export async function refreshPlaylists() {
+  if (isTauri) {
+    try {
+      const filePlaylists = await invoke('load_playlists');
+      if (Array.isArray(filePlaylists)) {
+        savedPlaylists.set(filePlaylists);
+        const currentFiles = get(midiFiles);
+        if (currentFiles.length > 0) {
+          syncPlaylistsWithLibrary(currentFiles);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to refresh playlists:', err);
+    }
+  }
+}
+
+// Import external files directly to a specific playlist folder
+export async function importFilesToPlaylist(playlistName, filePaths) {
+  if (isTauri && filePaths && filePaths.length > 0) {
+    try {
+      const count = await invoke('import_files_to_playlist', { playlistName, filePaths });
+      await loadMidiFiles();
+      await refreshPlaylists();
+      return count;
+    } catch (err) {
+      console.error('Failed to import files to playlist:', err);
+      throw err;
+    }
+  }
+  return 0;
 }
 
 // Sync playlists with current midiFiles (hydrate paths only)
@@ -719,6 +852,7 @@ export async function loadMidiFiles(limit = 0, append = false) {
             syncFavoritesWithLibrary(files);
             syncPlaylistsWithLibrary(files);
           })();
+          refreshPlaylists();
 
           // Check if there are more files
           midiFiles.subscribe(loadedFiles => {

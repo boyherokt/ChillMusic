@@ -3,6 +3,7 @@ import { get } from 'svelte/store'
 
 vi.mock('../../lib/tauri/core-proxy.js', () => ({
   invoke: vi.fn(() => Promise.resolve({})),
+  isTauri: false,
 }))
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(() => Promise.resolve({ unlisten: vi.fn() })),

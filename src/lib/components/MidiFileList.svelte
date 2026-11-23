@@ -34,6 +34,7 @@
     libraryScrollTop,
     librarySortBy,
     scrollToTrackTrigger,
+    refreshPlaylists,
   } from "../stores/player.js";
   import {
     bandSongSelectMode,
@@ -216,19 +217,38 @@
       setTimeout(() => scrollToSong(target), 120);
     }
 
-    // Listen for Tauri drag-drop events
+    // Listen for Tauri drag-drop events (supports files, folders, and zip archives)
     if (isTauri) {
       unlistenDrop = await listen("tauri://drag-drop", async (event) => {
         isDragOver = false;
         const paths = event.payload.paths || [];
-        const midFiles = paths.filter((p) => p.toLowerCase().endsWith(".mid"));
+        if (paths.length === 0) return;
 
-        if (midFiles.length === 0) {
-          showToast("Please drop .mid files only", "error");
-          return;
+        isImportingFiles.set(true);
+        try {
+          const res = await invoke("import_dropped_paths", { paths });
+          await loadMidiFiles();
+          await refreshPlaylists();
+
+          const parts = [];
+          if (res && res.root_midi_count > 0) {
+            parts.push(`${res.root_midi_count} file(s) added to Library`);
+          }
+          if (res && res.created_playlists && res.created_playlists.length > 0) {
+            parts.push(`Playlists: ${res.created_playlists.join(", ")}`);
+          }
+
+          if (parts.length > 0) {
+            showToast(parts.join(" | "), "success");
+          } else {
+            showToast("No valid MIDI files found to import", "info");
+          }
+        } catch (error) {
+          console.error("Drop import failed:", error);
+          showToast(error.toString(), "error");
+        } finally {
+          isImportingFiles.set(false);
         }
-
-        await importFiles(midFiles);
       });
 
       unlistenHover = await listen("tauri://drag-enter", () => {
@@ -292,14 +312,6 @@
     } else {
       showToast("Failed to import files", "error");
     }
-
-    // Show playlist prompt if multiple files were selected (imported + skipped)
-    if (importedFilesList.length > 1) {
-      lastImportedFiles = importedFilesList;
-      newPlaylistName =
-        sourceName || `Imported ${new Date().toLocaleDateString()}`;
-      showPlaylistPrompt = true;
-    }
   }
 
   async function openFileDialog() {
@@ -356,23 +368,16 @@
   async function importFromZip(zipPath) {
     isImportingFiles.set(true);
     try {
-      const imported = await invoke("import_from_zip", { zipPath });
+      const res = await invoke("import_from_zip", { zipPath });
       await loadMidiFiles();
+      await refreshPlaylists();
       isImportingFiles.set(false);
 
-      if (imported.length > 0) {
+      if (res && res.count > 0) {
         showToast(
-          `Imported ${imported.length} file${imported.length > 1 ? "s" : ""} from zip`,
+          `Imported ${res.count} file${res.count > 1 ? "s" : ""} to playlist "${res.playlist_name}"`,
           "success",
         );
-        // Show playlist prompt
-        if (imported.length > 1) {
-          lastImportedFiles = imported;
-          const zipName =
-            zipPath.split(/[\\/]/).pop()?.replace(".zip", "") || "Imported";
-          newPlaylistName = zipName;
-          showPlaylistPrompt = true;
-        }
       } else {
         showToast("No MIDI files found in zip", "info");
       }
@@ -386,18 +391,19 @@
   async function importFromFolder(folderPath) {
     isImportingFiles.set(true);
     try {
-      // Get list of midi files in folder
-      const midiPaths = await invoke("list_midi_in_folder", { folderPath });
+      const res = await invoke("import_folder_as_playlist", { folderPath });
+      await loadMidiFiles();
+      await refreshPlaylists();
+      isImportingFiles.set(false);
 
-      if (midiPaths.length === 0) {
-        isImportingFiles.set(false);
+      if (res && res.count > 0) {
+        showToast(
+          `Imported ${res.count} file${res.count > 1 ? "s" : ""} to playlist "${res.playlist_name}"`,
+          "success",
+        );
+      } else {
         showToast("No MIDI files found in folder", "info");
-        return;
       }
-
-      // Import using existing function
-      const folderName = folderPath.split(/[\\/]/).pop() || "Imported";
-      await importFiles(midiPaths, folderName);
     } catch (error) {
       isImportingFiles.set(false);
       console.error("Failed to import from folder:", error);

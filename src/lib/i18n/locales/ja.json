@@ -281,7 +281,13 @@
     "exportPlaylist": "プレイリストをエクスポート",
     "fileMissing": "ファイルがありません",
     "remove": "削除",
-    "removeFromPlaylist": "プレイリストから削除"
+    "removeFromPlaylist": "プレイリストから削除",
+    "openFolder": "フォルダを開く",
+    "openAlbumFolder": "アルバムフォルダを開く",
+    "refreshFromFolders": "フォルダから更新",
+    "folderHint": "アルバム内のフォルダが自動的にプレイリストになります",
+    "addFilesToPlaylist": "プレイリストにMIDIファイルを追加",
+    "importedToPlaylist": "プレイリスト「{name}」に{count}曲をインポートしました"
   },
   "queue": {
     "title": "キュー",

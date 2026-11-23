@@ -282,7 +282,13 @@
     "exportPlaylist": "Xuất danh sách",
     "fileMissing": "Thiếu file",
     "remove": "Gỡ",
-    "removeFromPlaylist": "Gỡ khỏi danh sách"
+    "removeFromPlaylist": "Gỡ khỏi danh sách",
+    "openFolder": "Mở thư mục",
+    "openAlbumFolder": "Mở thư mục Album",
+    "refreshFromFolders": "Làm mới từ thư mục",
+    "folderHint": "Thư mục bên trong album sẽ tự động tạo thành playlist",
+    "addFilesToPlaylist": "Thêm file MIDI vào Playlist",
+    "importedToPlaylist": "Đã nhập {count} bài vào playlist \"{name}\""
   },
   "queue": {
     "title": "Hàng đợi",

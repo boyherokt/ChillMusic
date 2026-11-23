@@ -281,7 +281,13 @@
     "exportPlaylist": "ส่งออกเพลย์ลิสต์",
     "fileMissing": "ไฟล์หายไป",
     "remove": "ลบ",
-    "removeFromPlaylist": "ลบจากเพลย์ลิสต์"
+    "removeFromPlaylist": "ลบจากเพลย์ลิสต์",
+    "openFolder": "เปิดโฟลเดอร์",
+    "openAlbumFolder": "เปิดโฟลเดอร์อัลบั้ม",
+    "refreshFromFolders": "รีเฟรชจากโฟลเดอร์",
+    "folderHint": "โฟลเดอร์ในอัลบั้มจะกลายเป็นเพลย์ลิสต์โดยอัตโนมัติ",
+    "addFilesToPlaylist": "เพิ่มไฟล์ MIDI ลงในเพลย์ลิสต์",
+    "importedToPlaylist": "นำเข้า {count} ไฟล์ไปยังเพลย์ลิสต์ \"{name}\""
   },
   "queue": {
     "title": "คิว",

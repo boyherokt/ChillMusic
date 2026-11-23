@@ -282,7 +282,13 @@
     "exportPlaylist": "Export playlist",
     "fileMissing": "File missing",
     "remove": "Remove",
-    "removeFromPlaylist": "Remove from playlist"
+    "removeFromPlaylist": "Remove from playlist",
+    "openFolder": "Open Folder",
+    "openAlbumFolder": "Open Album Folder",
+    "refreshFromFolders": "Refresh from Folders",
+    "folderHint": "Folders inside album will automatically become playlists",
+    "addFilesToPlaylist": "Add MIDI Files to Playlist",
+    "importedToPlaylist": "Imported {count} file(s) to playlist \"{name}\""
   },
   "queue": {
     "title": "Queue",

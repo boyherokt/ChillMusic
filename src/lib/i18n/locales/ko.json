@@ -281,7 +281,13 @@
     "exportPlaylist": "재생목록 내보내기",
     "fileMissing": "파일 없음",
     "remove": "제거",
-    "removeFromPlaylist": "재생목록에서 제거"
+    "removeFromPlaylist": "재생목록에서 제거",
+    "openFolder": "폴더 열기",
+    "openAlbumFolder": "앨범 폴더 열기",
+    "refreshFromFolders": "폴더에서 새로고침",
+    "folderHint": "앨범 내 폴더가 자동으로 재생목록이 됩니다",
+    "addFilesToPlaylist": "재생목록에 MIDI 파일 추가",
+    "importedToPlaylist": "재생목록 \"{name}\"에 {count}개 파일을 가져왔습니다"
   },
   "queue": {
     "title": "대기열",

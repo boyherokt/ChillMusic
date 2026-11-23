@@ -281,7 +281,13 @@
     "exportPlaylist": "导出歌单",
     "fileMissing": "文件缺失",
     "remove": "移除",
-    "removeFromPlaylist": "从歌单移除"
+    "removeFromPlaylist": "从歌单移除",
+    "openFolder": "打开文件夹",
+    "openAlbumFolder": "打开专辑文件夹",
+    "refreshFromFolders": "从文件夹刷新",
+    "folderHint": "专辑中的文件夹将自动生成为播放列表",
+    "addFilesToPlaylist": "添加 MIDI 文件到播放列表",
+    "importedToPlaylist": "已导入 {count} 个文件到播放列表 \"{name}\""
   },
   "queue": {
     "title": "队列",

@@ -30,6 +30,9 @@
     isPaused,
     scrollToTrackTrigger,
     playlistsScrollTop,
+    openPlaylistFolder,
+    refreshPlaylists,
+    importFilesToPlaylist,
   } from "../stores/player.js";
   import SongContextMenu from "./SongContextMenu.svelte";
   import SearchSort from "./SearchSort.svelte";
@@ -145,8 +148,42 @@
     }, 100);
   }
 
-  onMount(() => {
+  let isRefreshing = false;
+  let isAddingFiles = false;
+
+  async function handleAddFilesToPlaylist(targetPlaylist) {
+    if (!targetPlaylist || isAddingFiles) return;
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [{ name: "MIDI Files", extensions: ["mid", "midi"] }],
+      });
+
+      if (selected && selected.length > 0) {
+        isAddingFiles = true;
+        await importFilesToPlaylist(targetPlaylist.name, selected);
+      }
+    } catch (err) {
+      console.error("Failed to add files to playlist:", err);
+    } finally {
+      isAddingFiles = false;
+    }
+  }
+
+  async function handleRefreshPlaylists() {
+    if (isRefreshing) return;
+    try {
+      isRefreshing = true;
+      await loadMidiFiles();
+      await refreshPlaylists();
+    } finally {
+      isRefreshing = false;
+    }
+  }
+
+  onMount(async () => {
     checkScrollMask();
+    await refreshPlaylists();
     if (scrollContainer) {
       scrollContainer.scrollTop = $playlistsScrollTop || 0;
     }
@@ -483,6 +520,24 @@
           </button>
           <button
             class="p-2 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-all"
+            onclick={() => handleAddFilesToPlaylist(selectedPlaylist)}
+            disabled={isAddingFiles}
+            title={$t("playlists.addFilesToPlaylist")}
+          >
+            <Icon
+              icon={isAddingFiles ? "mdi:loading" : "mdi:plus"}
+              class="w-4 h-4 {isAddingFiles ? 'animate-spin' : ''}"
+            />
+          </button>
+          <button
+            class="p-2 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-all"
+            onclick={() => openPlaylistFolder(selectedPlaylist.name)}
+            title={$t("playlists.openFolder")}
+          >
+            <Icon icon="mdi:folder-open" class="w-4 h-4" />
+          </button>
+          <button
+            class="p-2 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-all"
             onclick={exportPlaylist}
             disabled={selectedPlaylist.tracks.length === 0 || isExporting}
             title={$t("playlists.exportPlaylist")}
@@ -669,11 +724,22 @@
       </div>
     {:else if selectedPlaylist.tracks.length === 0}
       <div
-        class="flex-1 flex flex-col items-center justify-center text-white/40 py-12"
+        class="flex-1 flex flex-col items-center justify-center text-white/40 py-12 gap-3"
       >
-        <Icon icon="mdi:music-note-plus" class="w-12 h-12 mb-4 opacity-50" />
+        <Icon icon="mdi:music-note-plus" class="w-12 h-12 opacity-50" />
         <p class="text-sm">{$t("playlists.emptyPlaylist")}</p>
-        <p class="text-xs mt-1">{$t("playlists.addSongsFromLibrary")}</p>
+        <p class="text-xs">{$t("playlists.addSongsFromLibrary")}</p>
+        <button
+          class="spotify-button spotify-button--primary flex items-center gap-2 text-sm py-2 px-4 !text-white mt-2"
+          onclick={() => handleAddFilesToPlaylist(selectedPlaylist)}
+          disabled={isAddingFiles}
+        >
+          <Icon
+            icon={isAddingFiles ? "mdi:loading" : "mdi:plus"}
+            class="w-4 h-4 {isAddingFiles ? 'animate-spin' : ''}"
+          />
+          {$t("playlists.addFilesToPlaylist")}
+        </button>
       </div>
     {/if}
 
@@ -697,6 +763,26 @@
           </p>
         </div>
         <div class="flex items-center gap-2">
+          <button
+            class="spotify-button spotify-button--secondary flex items-center gap-2"
+            onclick={() => openPlaylistFolder(null)}
+            title={$t("playlists.openAlbumFolder")}
+          >
+            <Icon icon="mdi:folder-open" class="w-4 h-4" />
+            {$t("playlists.openAlbumFolder")}
+          </button>
+          <button
+            class="spotify-button spotify-button--secondary flex items-center gap-2"
+            onclick={handleRefreshPlaylists}
+            disabled={isRefreshing}
+            title={$t("playlists.refreshFromFolders")}
+          >
+            <Icon
+              icon={isRefreshing ? "mdi:loading" : "mdi:refresh"}
+              class="w-4 h-4 {isRefreshing ? 'animate-spin' : ''}"
+            />
+            {$t("playlists.refreshFromFolders")}
+          </button>
           <button
             class="spotify-button spotify-button--secondary flex items-center gap-2"
             onclick={importPlaylist}
@@ -862,14 +948,26 @@
         <p class="text-lg font-semibold mb-2 text-white/60">
           {$t("playlists.noPlaylists")}
         </p>
-        <p class="text-sm mb-4">{$t("playlists.createToOrganize")}</p>
-        <button
-          class="spotify-button spotify-button--primary flex items-center gap-2"
-          onclick={() => (showCreateModal = true)}
-        >
-          <Icon icon="mdi:plus" class="w-4 h-4" />
-          {$t("playlists.createPlaylist")}
-        </button>
+        <p class="text-sm mb-2">{$t("playlists.createToOrganize")}</p>
+        <p class="text-xs mb-4 text-white/40 max-w-sm text-center">
+          {$t("playlists.folderHint")}
+        </p>
+        <div class="flex items-center gap-3">
+          <button
+            class="spotify-button spotify-button--primary flex items-center gap-2"
+            onclick={() => (showCreateModal = true)}
+          >
+            <Icon icon="mdi:plus" class="w-4 h-4" />
+            {$t("playlists.createPlaylist")}
+          </button>
+          <button
+            class="spotify-button spotify-button--secondary flex items-center gap-2"
+            onclick={() => openPlaylistFolder(null)}
+          >
+            <Icon icon="mdi:folder-open" class="w-4 h-4" />
+            {$t("playlists.openAlbumFolder")}
+          </button>
+        </div>
       </div>
     {/if}
   {/if}

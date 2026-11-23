@@ -400,6 +400,57 @@ fn get_album_folder() -> Result<std::path::PathBuf, String> {
     Ok(exe_dir.join("album"))
 }
 
+/// Recursively collect all .mid files in a directory and its subdirectories
+fn collect_midi_files_recursive(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut result = Vec::new();
+    if !dir.exists() || !dir.is_dir() {
+        return result;
+    }
+    let mut dirs_to_visit = vec![dir.to_path_buf()];
+    while let Some(current_dir) = dirs_to_visit.pop() {
+        if let Ok(entries) = std::fs::read_dir(&current_dir) {
+            let mut entries_vec: Vec<_> = entries.flatten().collect();
+            entries_vec.sort_by_key(|e| e.path());
+            for entry in entries_vec {
+                let path = entry.path();
+                if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                    if file_name.starts_with('.') {
+                        continue;
+                    }
+                }
+                if path.is_dir() {
+                    dirs_to_visit.push(path);
+                } else if path.is_file() {
+                    if path
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .map(|ext| ext.eq_ignore_ascii_case("mid"))
+                        .unwrap_or(false)
+                    {
+                        result.push(path);
+                    }
+                }
+            }
+        }
+    }
+    result.sort();
+    result
+}
+
+/// Sanitize playlist name for safe folder creation on Windows
+fn sanitize_playlist_folder_name(name: &str) -> String {
+    let safe: String = name
+        .chars()
+        .map(|c| if ['/', '\\', ':', '*', '?', '"', '<', '>', '|'].contains(&c) { '_' } else { c })
+        .collect();
+    let trimmed = safe.trim().trim_matches('.').trim();
+    if trimmed.is_empty() {
+        "Playlist".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 mod discovery;
 mod keyboard;
 mod midi;
@@ -520,22 +571,16 @@ async fn load_midi_files() -> Result<Vec<MidiFile>, String> {
     let mut cache = load_metadata_cache();
     let mut cache_modified = false;
 
-    let entries = std::fs::read_dir(&album_path).map_err(|e| e.to_string())?;
+    let entries = collect_midi_files_recursive(&album_path);
 
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("mid") {
-                continue;
-            }
-
-            let path_str = path.to_string_lossy().to_string();
-            let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("Unknown")
-                .to_string();
-            let mtime = get_file_mtime(&path);
+    for path in entries {
+        let path_str = path.to_string_lossy().to_string();
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let mtime = get_file_mtime(&path);
 
             // Check cache - now includes hash and size
             if let Some(cached) = cache.files.get(&path_str) {
@@ -589,7 +634,6 @@ async fn load_midi_files() -> Result<Vec<MidiFile>, String> {
                 mtime,
             });
         }
-    }
 
     // Save cache if modified
     if cache_modified {
@@ -628,13 +672,8 @@ async fn get_library_info() -> Result<LibraryInfo, String> {
         });
     }
 
-    // Get all midi files
-    let files: Vec<_> = std::fs::read_dir(&album_path)
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("mid"))
-        .collect();
+    // Get all midi files recursively
+    let files = collect_midi_files_recursive(&album_path);
 
     let total_files = files.len();
 
@@ -671,11 +710,7 @@ async fn count_midi_files() -> Result<usize, String> {
         return Ok(0);
     }
 
-    let count = std::fs::read_dir(&album_path)
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("mid"))
-        .count();
+    let count = collect_midi_files_recursive(&album_path).len();
 
     Ok(count)
 }
@@ -709,26 +744,8 @@ async fn load_midi_files_streaming(
     // Spawn blocking work in a separate thread so events can be emitted
     let window_clone = window.clone();
     std::thread::spawn(move || {
-        // First pass: quickly collect all .mid file paths
-        let all_entries: Vec<_> = match std::fs::read_dir(&album_path) {
-            Ok(dir) => dir
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("mid"))
-                .collect(),
-            Err(_) => {
-                let _ = window_clone.emit(
-                    "midi-load-progress",
-                    MidiLoadProgress {
-                        loaded: 0,
-                        total: 0,
-                        files: vec![],
-                        done: true,
-                    },
-                );
-                return;
-            }
-        };
+        // First pass: quickly collect all .mid file paths recursively
+        let all_entries = collect_midi_files_recursive(&album_path);
 
         let _total_all = all_entries.len();
 
@@ -1416,9 +1433,9 @@ async fn import_midi_file(source_path: String) -> Result<MidiFile, String> {
     })
 }
 
-// Import all .mid files from a zip archive
+// Import all .mid files from a zip archive into a playlist folder
 #[tauri::command]
-async fn import_from_zip(zip_path: String) -> Result<Vec<MidiFile>, String> {
+async fn import_from_zip(zip_path: String) -> Result<serde_json::Value, String> {
     use std::io::Read;
 
     let zip_file =
@@ -1427,9 +1444,16 @@ async fn import_from_zip(zip_path: String) -> Result<Vec<MidiFile>, String> {
         zip::ZipArchive::new(zip_file).map_err(|e| format!("Invalid zip file: {}", e))?;
 
     let album_path = get_album_folder()?;
-    std::fs::create_dir_all(&album_path).ok();
+    let zip_p = std::path::Path::new(&zip_path);
+    let stem = zip_p
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Imported");
+    let safe_name = sanitize_playlist_folder_name(stem);
+    let target_dir = album_path.join(&safe_name);
+    std::fs::create_dir_all(&target_dir).map_err(|e| format!("Failed to create folder: {}", e))?;
 
-    let mut imported = Vec::new();
+    let mut imported_count = 0;
 
     for i in 0..archive.len() {
         let mut file = match archive.by_index(i) {
@@ -1443,7 +1467,12 @@ async fn import_from_zip(zip_path: String) -> Result<Vec<MidiFile>, String> {
         };
 
         // Only .mid files
-        if path.extension().and_then(|s| s.to_str()) != Some("mid") {
+        if path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("mid"))
+            != Some(true)
+        {
             continue;
         }
 
@@ -1452,7 +1481,7 @@ async fn import_from_zip(zip_path: String) -> Result<Vec<MidiFile>, String> {
             None => continue,
         };
 
-        let dest = album_path.join(&filename);
+        let dest = target_dir.join(&filename);
         if dest.exists() {
             continue;
         }
@@ -1465,33 +1494,211 @@ async fn import_from_zip(zip_path: String) -> Result<Vec<MidiFile>, String> {
             continue;
         }
 
-        let name = std::path::Path::new(&filename)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("Unknown")
-            .to_string();
-        let meta = midi::get_midi_metadata(&dest.to_string_lossy()).unwrap_or(midi::MidiMetadata {
-            duration: 0.0,
-            bpm: 120,
-            note_count: 0,
-            note_density: 0.0,
-        });
-        let hash = compute_file_hash(&dest).unwrap_or_default();
-
-        let mtime = get_file_mtime(&dest);
-        imported.push(MidiFile {
-            name,
-            path: dest.to_string_lossy().to_string(),
-            duration: meta.duration,
-            bpm: meta.bpm,
-            note_density: meta.note_density,
-            hash,
-            size: contents.len() as u64,
-            mtime,
-        });
+        imported_count += 1;
     }
 
-    Ok(imported)
+    Ok(serde_json::json!({
+        "playlist_name": safe_name,
+        "count": imported_count
+    }))
+}
+
+// Import all .mid files from a directory into a playlist folder named after the directory
+#[tauri::command]
+async fn import_folder_as_playlist(folder_path: String) -> Result<serde_json::Value, String> {
+    let folder = std::path::Path::new(&folder_path);
+    if !folder.is_dir() {
+        return Err("Path is not a directory".to_string());
+    }
+
+    let folder_name = folder
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Imported Playlist");
+
+    let safe_name = sanitize_playlist_folder_name(folder_name);
+    let album_path = get_album_folder()?;
+    let target_dir = album_path.join(&safe_name);
+
+    if !target_dir.exists() {
+        std::fs::create_dir_all(&target_dir)
+            .map_err(|e| format!("Failed to create playlist folder: {}", e))?;
+    }
+
+    let midi_files = collect_midi_files_recursive(folder);
+    let mut imported_count = 0;
+
+    for source_path in midi_files {
+        if let Some(filename) = source_path.file_name() {
+            let dest = target_dir.join(filename);
+            if source_path != dest && !dest.exists() {
+                if std::fs::copy(&source_path, &dest).is_ok() {
+                    imported_count += 1;
+                }
+            }
+        }
+    }
+
+    Ok(serde_json::json!({
+        "playlist_name": safe_name,
+        "count": imported_count
+    }))
+}
+
+// Import external files directly into a specific playlist folder
+#[tauri::command]
+async fn import_files_to_playlist(
+    playlist_name: String,
+    file_paths: Vec<String>,
+) -> Result<usize, String> {
+    let album_path = get_album_folder()?;
+    let safe_name = sanitize_playlist_folder_name(&playlist_name);
+    let target_dir = album_path.join(&safe_name);
+    if !target_dir.exists() {
+        std::fs::create_dir_all(&target_dir)
+            .map_err(|e| format!("Failed to create playlist folder: {}", e))?;
+    }
+
+    let mut imported_count = 0;
+    for file_path in file_paths {
+        let source = std::path::Path::new(&file_path);
+        if !source.exists()
+            || source
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("mid"))
+                != Some(true)
+        {
+            continue;
+        }
+        if let Some(filename) = source.file_name() {
+            let dest = target_dir.join(filename);
+            if source != dest && !dest.exists() {
+                if std::fs::copy(&source, &dest).is_ok() {
+                    imported_count += 1;
+                }
+            }
+        }
+    }
+
+    Ok(imported_count)
+}
+
+// Handle dropped items (folders, zip archives, or single mid files)
+#[tauri::command]
+async fn import_dropped_paths(paths: Vec<String>) -> Result<serde_json::Value, String> {
+    use std::io::Read;
+
+    let album_path = get_album_folder()?;
+    if !album_path.exists() {
+        std::fs::create_dir_all(&album_path).map_err(|e| e.to_string())?;
+    }
+
+    let mut root_midi_count = 0;
+    let mut created_playlists: Vec<String> = Vec::new();
+
+    for p_str in paths {
+        let path = std::path::Path::new(&p_str);
+        if !path.exists() {
+            continue;
+        }
+
+        if path.is_dir() {
+            let folder_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Imported Playlist");
+            let safe_name = sanitize_playlist_folder_name(folder_name);
+            let target_dir = album_path.join(&safe_name);
+            std::fs::create_dir_all(&target_dir).ok();
+
+            let midi_files = collect_midi_files_recursive(path);
+            let mut count = 0;
+            for source_path in midi_files {
+                if let Some(filename) = source_path.file_name() {
+                    let dest = target_dir.join(filename);
+                    if source_path != dest && !dest.exists() {
+                        if std::fs::copy(&source_path, &dest).is_ok() {
+                            count += 1;
+                        }
+                    }
+                }
+            }
+            if count > 0 && !created_playlists.contains(&safe_name) {
+                created_playlists.push(safe_name);
+            }
+        } else if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            if ext.eq_ignore_ascii_case("zip") {
+                let zip_file = match std::fs::File::open(path) {
+                    Ok(f) => f,
+                    Err(_) => continue,
+                };
+                let mut archive = match zip::ZipArchive::new(zip_file) {
+                    Ok(a) => a,
+                    Err(_) => continue,
+                };
+
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Imported");
+                let safe_name = sanitize_playlist_folder_name(stem);
+                let target_dir = album_path.join(&safe_name);
+                std::fs::create_dir_all(&target_dir).ok();
+
+                let mut zip_count = 0;
+                for i in 0..archive.len() {
+                    let mut file = match archive.by_index(i) {
+                        Ok(f) => f,
+                        Err(_) => continue,
+                    };
+                    let p = match file.enclosed_name() {
+                        Some(p) => p.to_owned(),
+                        None => continue,
+                    };
+                    if p.extension()
+                        .and_then(|s| s.to_str())
+                        .map(|ext| ext.eq_ignore_ascii_case("mid"))
+                        != Some(true)
+                    {
+                        continue;
+                    }
+                    let filename = match p.file_name() {
+                        Some(n) => n.to_owned(),
+                        None => continue,
+                    };
+                    let dest = target_dir.join(&filename);
+                    if dest.exists() {
+                        continue;
+                    }
+                    let mut contents = Vec::new();
+                    if file.read_to_end(&mut contents).is_err() {
+                        continue;
+                    }
+                    if std::fs::write(&dest, &contents).is_ok() {
+                        zip_count += 1;
+                    }
+                }
+                if zip_count > 0 && !created_playlists.contains(&safe_name) {
+                    created_playlists.push(safe_name);
+                }
+            } else if ext.eq_ignore_ascii_case("mid") {
+                if let Some(filename) = path.file_name() {
+                    let dest = album_path.join(filename);
+                    if path != dest && !dest.exists() {
+                        if std::fs::copy(path, &dest).is_ok() {
+                            root_midi_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(serde_json::json!({
+        "root_midi_count": root_midi_count,
+        "created_playlists": created_playlists
+    }))
 }
 
 // List all .mid files in a folder (recursive)
@@ -2411,16 +2618,368 @@ async fn save_favorites(favorites: serde_json::Value) -> Result<(), String> {
 
 #[tauri::command]
 async fn load_playlists() -> Result<serde_json::Value, String> {
-    let path = get_data_path("playlists.json")?;
-    if path.exists() {
-        let content = std::fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read playlists: {}", e))?;
-        let json: serde_json::Value = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse playlists: {}", e))?;
-        Ok(json)
-    } else {
-        Ok(serde_json::json!([]))
+    let album_path = get_album_folder()?;
+    if !album_path.exists() {
+        let _ = std::fs::create_dir_all(&album_path);
     }
+
+    let playlists_path = get_data_path("playlists.json")?;
+    let mut playlists: Vec<serde_json::Value> = if playlists_path.exists() {
+        let content = std::fs::read_to_string(&playlists_path).unwrap_or_default();
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let mut cache = load_metadata_cache();
+    let mut cache_modified = false;
+
+    // Read config to check if initial migration was performed
+    let mut config = load_config();
+    let migrated = config["folder_playlists_migrated"]
+        .as_bool()
+        .unwrap_or(false);
+
+    // Initial migration: ensure folders exist for existing playlists and populate tracks
+    if !migrated {
+        for p in &mut playlists {
+            if let Some(name) = p.get("name").and_then(|n| n.as_str()) {
+                let safe_name = sanitize_playlist_folder_name(name);
+                let folder = album_path.join(&safe_name);
+                if !folder.exists() {
+                    let _ = std::fs::create_dir_all(&folder);
+                    // Copy existing tracks from root album into this folder if available
+                    if let Some(tracks) = p.get_mut("tracks").and_then(|t| t.as_array_mut()) {
+                        for track in tracks.iter_mut() {
+                            let track_name = track.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                            let filename = format!("{}.mid", track_name);
+                            let root_file = album_path.join(&filename);
+                            let dest_file = folder.join(&filename);
+                            if root_file.exists() && !dest_file.exists() {
+                                if std::fs::copy(&root_file, &dest_file).is_ok() {
+                                    track["path"] = serde_json::json!(dest_file.to_string_lossy().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        config["folder_playlists_migrated"] = serde_json::json!(true);
+        save_config(&config);
+    }
+
+    // Scan all immediate subdirectories in album_path
+    let mut found_folders = std::collections::HashSet::new();
+
+    if let Ok(entries) = std::fs::read_dir(&album_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let folder_name = match path.file_name().and_then(|s| s.to_str()) {
+                Some(name) if !name.starts_with('.') => name.to_string(),
+                _ => continue,
+            };
+
+            found_folders.insert(folder_name.to_lowercase());
+
+            // Collect all .mid files in this folder recursively
+            let midi_file_paths = collect_midi_files_recursive(&path);
+            let mut folder_tracks = Vec::new();
+
+            for file_path in midi_file_paths {
+                let path_str = file_path.to_string_lossy().to_string();
+                let name = file_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string();
+                let mtime = get_file_mtime(&file_path);
+
+                let (duration, bpm, note_density, hash, size) = if let Some(cached) = cache.files.get(&path_str) {
+                    if cached.mtime == mtime && !cached.hash.is_empty() {
+                        (cached.duration, cached.bpm, cached.note_density, cached.hash.clone(), cached.size)
+                    } else {
+                        let meta = midi::get_midi_metadata(&path_str).unwrap_or(midi::MidiMetadata {
+                            duration: 0.0,
+                            bpm: 120,
+                            note_count: 0,
+                            note_density: 0.0,
+                        });
+                        let file_size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+                        let file_hash = compute_file_hash(&file_path).unwrap_or_else(|| format!("{:x}", file_size));
+                        cache.files.insert(
+                            path_str.clone(),
+                            CachedMetadata {
+                                mtime,
+                                duration: meta.duration,
+                                bpm: meta.bpm,
+                                note_density: meta.note_density,
+                                hash: file_hash.clone(),
+                                size: file_size,
+                            },
+                        );
+                        cache_modified = true;
+                        (meta.duration, meta.bpm, meta.note_density, file_hash, file_size)
+                    }
+                } else {
+                    let meta = midi::get_midi_metadata(&path_str).unwrap_or(midi::MidiMetadata {
+                        duration: 0.0,
+                        bpm: 120,
+                        note_count: 0,
+                        note_density: 0.0,
+                    });
+                    let file_size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+                    let file_hash = compute_file_hash(&file_path).unwrap_or_else(|| format!("{:x}", file_size));
+                    cache.files.insert(
+                        path_str.clone(),
+                        CachedMetadata {
+                            mtime,
+                            duration: meta.duration,
+                            bpm: meta.bpm,
+                            note_density: meta.note_density,
+                            hash: file_hash.clone(),
+                            size: file_size,
+                        },
+                    );
+                    cache_modified = true;
+                    (meta.duration, meta.bpm, meta.note_density, file_hash, file_size)
+                };
+
+                folder_tracks.push(serde_json::json!({
+                    "name": name,
+                    "path": path_str,
+                    "duration": duration,
+                    "bpm": bpm,
+                    "note_density": note_density,
+                    "hash": hash,
+                    "size": size,
+                }));
+            }
+
+            // Find matching playlist in playlists.json
+            let existing_idx = playlists.iter().position(|p| {
+                p.get("name")
+                    .and_then(|n| n.as_str())
+                    .map(|n| n.eq_ignore_ascii_case(&folder_name))
+                    .unwrap_or(false)
+            });
+
+            if let Some(idx) = existing_idx {
+                let existing_p = &mut playlists[idx];
+                let current_tracks = existing_p
+                    .get("tracks")
+                    .and_then(|t| t.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut updated_tracks = Vec::new();
+                let mut seen_hashes = std::collections::HashSet::new();
+
+                // Preserve custom track ordering for tracks that still exist
+                for track in current_tracks {
+                    let hash = track.get("hash").and_then(|h| h.as_str()).unwrap_or("");
+                    let path = track.get("path").and_then(|p| p.as_str()).unwrap_or("");
+                    if let Some(matching) = folder_tracks.iter().find(|t| {
+                        let t_hash = t.get("hash").and_then(|h| h.as_str()).unwrap_or("");
+                        let t_path = t.get("path").and_then(|p| p.as_str()).unwrap_or("");
+                        (!hash.is_empty() && t_hash == hash) || (!path.is_empty() && t_path == path)
+                    }) {
+                        if !seen_hashes.contains(hash) {
+                            seen_hashes.insert(hash.to_string());
+                            let mut merged = track.clone();
+                            if let Some(p) = matching.get("path") {
+                                merged["path"] = p.clone();
+                            }
+                            updated_tracks.push(merged);
+                        }
+                    }
+                }
+
+                // Append any new tracks found in the folder
+                for track in folder_tracks {
+                    let hash = track.get("hash").and_then(|h| h.as_str()).unwrap_or("");
+                    if !seen_hashes.contains(hash) {
+                        seen_hashes.insert(hash.to_string());
+                        updated_tracks.push(track);
+                    }
+                }
+
+                existing_p["tracks"] = serde_json::Value::Array(updated_tracks);
+            } else {
+                // New playlist discovered from folder
+                let id = format!(
+                    "{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                );
+                playlists.push(serde_json::json!({
+                    "id": id,
+                    "name": folder_name,
+                    "createdAt": chrono_now(),
+                    "tracks": folder_tracks
+                }));
+            }
+        }
+    }
+
+    if cache_modified {
+        save_metadata_cache(&cache);
+    }
+
+    // Filter out playlists whose folders were deleted on disk (if migrated)
+    if migrated {
+        playlists.retain(|p| {
+            if let Some(name) = p.get("name").and_then(|n| n.as_str()) {
+                let safe = sanitize_playlist_folder_name(name);
+                found_folders.contains(&name.to_lowercase()) || found_folders.contains(&safe.to_lowercase())
+            } else {
+                false
+            }
+        });
+    }
+
+    // Save updated playlists.json
+    let content = serde_json::to_string_pretty(&playlists)
+        .map_err(|e| format!("Failed to serialize playlists: {}", e))?;
+    let _ = std::fs::write(&playlists_path, content);
+
+    Ok(serde_json::Value::Array(playlists))
+}
+
+#[tauri::command]
+async fn create_playlist_folder(name: String) -> Result<String, String> {
+    let album_path = get_album_folder()?;
+    let safe_name = sanitize_playlist_folder_name(&name);
+    let folder_path = album_path.join(&safe_name);
+    if !folder_path.exists() {
+        std::fs::create_dir_all(&folder_path).map_err(|e| format!("Failed to create folder: {}", e))?;
+    }
+    Ok(safe_name)
+}
+
+#[tauri::command]
+async fn rename_playlist_folder(old_name: String, new_name: String) -> Result<String, String> {
+    let album_path = get_album_folder()?;
+    let safe_old = sanitize_playlist_folder_name(&old_name);
+    let safe_new = sanitize_playlist_folder_name(&new_name);
+    if safe_old.eq_ignore_ascii_case(&safe_new) {
+        return Ok(safe_new);
+    }
+    let old_path = album_path.join(&safe_old);
+    let new_path = album_path.join(&safe_new);
+
+    if old_path.exists() && old_path.is_dir() {
+        if new_path.exists() {
+            return Err("A folder with the new playlist name already exists".to_string());
+        }
+        std::fs::rename(&old_path, &new_path).map_err(|e| format!("Failed to rename folder: {}", e))?;
+    } else {
+        std::fs::create_dir_all(&new_path).map_err(|e| format!("Failed to create folder: {}", e))?;
+    }
+    Ok(safe_new)
+}
+
+#[tauri::command]
+async fn delete_playlist_folder(name: String) -> Result<(), String> {
+    let album_path = get_album_folder()?;
+    let safe_name = sanitize_playlist_folder_name(&name);
+    let folder_path = album_path.join(&safe_name);
+    if folder_path.exists() && folder_path.is_dir() {
+        std::fs::remove_dir_all(&folder_path).map_err(|e| format!("Failed to delete playlist folder: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_playlist_folder(name: Option<String>) -> Result<(), String> {
+    let album_path = get_album_folder()?;
+    let target_path = match name {
+        Some(ref n) if !n.trim().is_empty() => {
+            let safe = sanitize_playlist_folder_name(n);
+            let folder = album_path.join(&safe);
+            if !folder.exists() {
+                std::fs::create_dir_all(&folder).ok();
+            }
+            folder
+        }
+        _ => {
+            if !album_path.exists() {
+                std::fs::create_dir_all(&album_path).ok();
+            }
+            album_path
+        }
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(target_path.to_string_lossy().to_string())
+            .spawn()
+            .map_err(|e| format!("Failed to open explorer: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn add_track_to_playlist_folder(
+    playlist_name: String,
+    file_path: String,
+) -> Result<String, String> {
+    let album_path = get_album_folder()?;
+    let safe_name = sanitize_playlist_folder_name(&playlist_name);
+    let playlist_dir = album_path.join(&safe_name);
+    if !playlist_dir.exists() {
+        std::fs::create_dir_all(&playlist_dir)
+            .map_err(|e| format!("Failed to create playlist folder: {}", e))?;
+    }
+
+    let source = std::path::Path::new(&file_path);
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    let filename = source.file_name().ok_or("Invalid filename")?;
+    let dest_path = playlist_dir.join(filename);
+
+    if source == dest_path {
+        return Ok(dest_path.to_string_lossy().to_string());
+    }
+
+    if !dest_path.exists() {
+        std::fs::copy(&source, &dest_path)
+            .map_err(|e| format!("Failed to copy file to playlist folder: {}", e))?;
+    }
+
+    Ok(dest_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn remove_track_from_playlist_folder(
+    playlist_name: String,
+    file_path: String,
+) -> Result<(), String> {
+    let album_path = get_album_folder()?;
+    let safe_name = sanitize_playlist_folder_name(&playlist_name);
+    let playlist_dir = album_path.join(&safe_name);
+    let target = std::path::Path::new(&file_path);
+
+    if target.exists() && target.starts_with(&playlist_dir) {
+        if let Some(filename) = target.file_name() {
+            let root_dest = album_path.join(filename);
+            if !root_dest.exists() {
+                let _ = std::fs::rename(target, &root_dest);
+            } else {
+                let _ = std::fs::remove_file(target);
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -2632,18 +3191,8 @@ async fn export_library(export_path: String, window: Window) -> Result<u32, Stri
         return Err("Album folder not found".to_string());
     }
 
-    // Collect all MIDI files
-    let midi_files: Vec<_> = std::fs::read_dir(&album_dir)
-        .map_err(|e| format!("Failed to read album folder: {}", e))?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry
-                .path()
-                .extension()
-                .map(|ext| ext.to_string_lossy().to_lowercase() == "mid")
-                .unwrap_or(false)
-        })
-        .collect();
+    // Collect all MIDI files recursively
+    let midi_files = collect_midi_files_recursive(&album_dir);
 
     let total_files = midi_files.len();
     if total_files == 0 {
@@ -2657,8 +3206,7 @@ async fn export_library(export_path: String, window: Window) -> Result<u32, Stri
 
     let mut exported_count = 0u32;
 
-    for (index, entry) in midi_files.iter().enumerate() {
-        let source_path = entry.path();
+    for (index, source_path) in midi_files.iter().enumerate() {
         let filename = source_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -2666,7 +3214,7 @@ async fn export_library(export_path: String, window: Window) -> Result<u32, Stri
             .to_string();
 
         // Read and add file to zip
-        match std::fs::read(&source_path) {
+        match std::fs::read(source_path) {
             Ok(midi_data) => {
                 if let Err(e) = zip.start_file(&filename, options) {
                     app_log!("[EXPORT] Failed to add {}: {}", filename, e);
@@ -2747,43 +3295,39 @@ fn get_existing_files_by_hash(
 ) -> std::collections::HashMap<String, MidiFile> {
     let mut map = std::collections::HashMap::new();
 
-    if let Ok(entries) = std::fs::read_dir(album_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("mid") {
-                if let Some(hash) = compute_file_hash(&path) {
-                    let name = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("Unknown")
-                        .to_string();
+    let entries = collect_midi_files_recursive(album_dir);
+    for path in entries {
+        if let Some(hash) = compute_file_hash(&path) {
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string();
 
-                    let meta = midi::get_midi_metadata(&path.to_string_lossy()).unwrap_or(
-                        midi::MidiMetadata {
-                            duration: 0.0,
-                            bpm: 120,
-                            note_count: 0,
-                            note_density: 0.0,
-                        },
-                    );
+            let meta = midi::get_midi_metadata(&path.to_string_lossy()).unwrap_or(
+                midi::MidiMetadata {
+                    duration: 0.0,
+                    bpm: 120,
+                    note_count: 0,
+                    note_density: 0.0,
+                },
+            );
 
-                    let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
-                    map.insert(
-                        hash.clone(),
-                        MidiFile {
-                            name,
-                            path: path.to_string_lossy().to_string(),
-                            duration: meta.duration,
-                            bpm: meta.bpm,
-                            note_density: meta.note_density,
-                            hash,
-                            size: file_size,
-                            mtime: get_file_mtime(&path),
-                        },
-                    );
-                }
-            }
+            map.insert(
+                hash.clone(),
+                MidiFile {
+                    name,
+                    path: path.to_string_lossy().to_string(),
+                    duration: meta.duration,
+                    bpm: meta.bpm,
+                    note_density: meta.note_density,
+                    hash,
+                    size: file_size,
+                    mtime: get_file_mtime(&path),
+                },
+            );
         }
     }
 
@@ -3491,6 +4035,9 @@ fn main() {
             seek,
             import_midi_file,
             import_from_zip,
+            import_folder_as_playlist,
+            import_files_to_playlist,
+            import_dropped_paths,
             list_midi_in_folder,
             download_midi_from_url,
             get_visualizer_notes,
@@ -3528,6 +4075,12 @@ fn main() {
             save_favorites,
             load_playlists,
             save_playlists,
+            create_playlist_folder,
+            rename_playlist_folder,
+            delete_playlist_folder,
+            open_playlist_folder,
+            add_track_to_playlist_folder,
+            remove_track_from_playlist_folder,
             export_favorites,
             export_playlist,
             export_library,

@@ -57,14 +57,16 @@ Nhấn **`Insert`** để thu nhỏ trình phát thành icon tròn mờ lơ lử
 ## Hướng dẫn sử dụng nhanh
 
 ### 1. Chuẩn bị file nhạc MIDI
-Tạo hoặc mở thư mục `album` nằm cạnh file thực thi và chép các file `.mid` vào:
+Tạo hoặc mở thư mục `album` nằm cạnh file thực thi và chép các file `.mid` vào (hỗ trợ phân loại theo thư mục Playlist):
 ```text
 Chill-Music/
 ├── chill-music.exe
 ├── locales/          <- Tự động sinh khi chạy (để tùy biến bản dịch nếu muốn)
 ├── album/            <- Đặt các bài nhạc .mid tại đây
 │   ├── BaiHat1.mid
-│   └── BaiHat2.mid
+│   └── Nhac Viet/    <- Thư mục con sẽ tự động đồng bộ thành Playlist trong app
+│       ├── BaiHat2.mid
+│       └── BaiHat3.mid
 ```
 
 ### 2. Khởi chạy & Phát nhạc
